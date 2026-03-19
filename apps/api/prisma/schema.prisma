@@ -1,0 +1,1076 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────
+
+enum RoleKey {
+  SUPER_ADMIN
+  CHANNEL_ADMIN
+  CREATOR_ADMIN
+  USER
+}
+
+enum ChannelCreatorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+enum CreatorPayoutRuleType {
+  PER_MINUTE_WATCHED
+  PERCENT_SUBSCRIPTION_POOL
+  PERCENT_RENTAL_REVENUE
+  PERCENT_PURCHASE_REVENUE
+  PERCENT_AD_REVENUE
+}
+
+enum PayoutSourceType {
+  SUBSCRIPTION
+  RENTAL
+  PURCHASE
+  ADS
+  ADJUSTMENT
+}
+
+enum PayoutStatus {
+  PENDING
+  POSTED
+  PAID
+}
+
+enum VideoStatus {
+  DRAFT
+  UNPUBLISHED
+  PUBLISHED
+  SCHEDULED
+  PROCESSING
+  ARCHIVED
+}
+
+enum VideoVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum PlaybackPolicy {
+  PUBLIC
+  SIGNED
+}
+
+enum AssetStatus {
+  CREATED
+  UPLOADED
+  PROCESSING
+  READY
+  ERRORED
+}
+
+enum ThumbnailType {
+  POSTER
+  THUMBNAIL
+  HERO
+  LANDING
+}
+
+enum ContentRowScopeType {
+  PLATFORM
+  CHANNEL
+}
+
+enum LandingDestinationType {
+  CHANNEL
+  VIDEO
+  EXTERNAL
+}
+
+enum HomepageElementType {
+  HERO
+  CONTENT_ROW
+  CHANNEL_ROW
+  TEXT_DIVIDER
+  LINE_DIVIDER
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum ConcurrencyTier {
+  STREAMS_1
+  STREAMS_3
+  STREAMS_5
+}
+
+enum AdTier {
+  WITH_ADS
+  WITHOUT_ADS
+}
+
+enum VideoAccessType {
+  FREE
+  FREE_WITH_ADS
+  SUBSCRIPTION
+  BUNDLE
+  RENTAL
+  PURCHASE
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum DiscountDuration {
+  ONCE
+  REPEATING
+  FOREVER
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  TRIALING
+}
+
+enum RentalStatus {
+  ACTIVE
+  EXPIRED
+  REFUNDED
+}
+
+enum PurchaseStatus {
+  ACTIVE
+  REFUNDED
+}
+
+enum ScheduledPublicationStatus {
+  PENDING
+  EXECUTED
+  CANCELED
+}
+
+enum AccessSourceType {
+  FREE
+  FREE_WITH_ADS
+  SUBSCRIPTION
+  BUNDLE
+  RENTAL
+  PURCHASE
+}
+
+// ─── AUTH / USERS ────────────────────────────────────────
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  emailVerifiedAt  DateTime?
+  passwordHash     String
+  firstName        String
+  lastName         String
+  stripeCustomerId String?   @unique
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  roles                  UserRole[]
+  sessions               Session[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens    PasswordResetToken[]
+  profiles               Profile[]
+  devices                Device[]
+  channelAdmins          ChannelAdmin[]
+  subscriptions          UserSubscription[]
+  bundleSubscriptions    UserBundleSubscription[]
+  rentals                UserRental[]
+  purchases              UserPurchase[]
+  paymentMethods         PaymentMethod[]
+  watchSessions          WatchSession[]
+  watchHistory           WatchHistory[]
+  favorites              Favorite[]
+  invoiceLogs            InvoiceLog[]
+  createdVideos          Video[]   @relation("CreatedByUser")
+  updatedVideos          Video[]   @relation("UpdatedByUser")
+
+  @@index([stripeCustomerId])
+}
+
+model Role {
+  id   String  @id @default(cuid())
+  key  RoleKey @unique
+  name String
+
+  userRoles UserRole[]
+}
+
+model UserRole {
+  id               String  @id @default(cuid())
+  userId           String
+  roleId           String
+  channelId        String?
+  creatorProfileId String?
+  createdAt        DateTime @default(now())
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  channel        Channel?        @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  creatorProfile CreatorProfile? @relation(fields: [creatorProfileId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([roleId])
+  @@index([channelId])
+  @@index([userId, roleId])
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Profile {
+  id               String   @id @default(cuid())
+  userId           String
+  name             String
+  avatarUrl        String?
+  maturitySettings String?
+  isKidsProfile    Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  watchSessions WatchSession[]
+  watchHistory  WatchHistory[]
+  favorites     Favorite[]
+
+  @@index([userId])
+}
+
+model Device {
+  id         String   @id @default(cuid())
+  userId     String
+  deviceName String
+  platform   String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  watchSessions WatchSession[]
+
+  @@index([userId])
+}
+
+// ─── ORGANIZATIONS / CHANNELS / CREATORS ─────────────────
+
+model Channel {
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  name             String
+  description      String?
+  shortDescription String?
+  logoUrl          String?
+  bannerUrl        String?
+  isActive            Boolean            @default(true)
+  defaultCurrency     String             @default("usd")
+  allowedAccessTypes  VideoAccessType[]  @default([FREE, FREE_WITH_ADS, SUBSCRIPTION, RENTAL, PURCHASE])
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  videos              Video[]
+  categories          Category[]
+  channelCreators     ChannelCreator[]
+  channelAdmins       ChannelAdmin[]
+  subscriptionPlans   SubscriptionPlan[]
+  bundleChannels      BundleChannel[]
+  payoutRules         PayoutRule[]
+  creatorPayoutRules  CreatorPayoutRule[]
+  payoutLedgers       PayoutLedger[]
+  contentRows         ContentRow[]
+  contentRowItems     ContentRowItem[]
+  thumbnailAssets     ThumbnailAsset[]
+  landingHeroes       LandingHero[]
+  userSubscriptions   UserSubscription[]
+  discountCodeChannels DiscountCodeChannel[]
+  userRoles           UserRole[]
+  videoAccessRules    VideoAccessRule[]
+  homepageElements    HomepageElement[]
+
+  @@index([slug])
+}
+
+model CreatorProfile {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  displayName String
+  bio         String?
+  avatarUrl   String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  videos             Video[]
+  channelCreators    ChannelCreator[]
+  creatorPayoutRules CreatorPayoutRule[]
+  payoutLedgers      PayoutLedger[]
+  userRoles          UserRole[]
+
+  @@index([slug])
+}
+
+model ChannelCreator {
+  id               String               @id @default(cuid())
+  channelId        String
+  creatorProfileId String
+  status           ChannelCreatorStatus @default(PENDING)
+  approvedAt       DateTime?
+  createdAt        DateTime             @default(now())
+
+  channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  creatorProfile CreatorProfile @relation(fields: [creatorProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, creatorProfileId])
+  @@index([channelId])
+  @@index([creatorProfileId])
+}
+
+model ChannelAdmin {
+  id        String   @id @default(cuid())
+  channelId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([channelId])
+  @@index([userId])
+}
+
+// ─── PAYOUTS / REVENUE RULES ─────────────────────────────
+
+model PayoutRule {
+  id             String    @id @default(cuid())
+  channelId      String
+  kolboPercent   Decimal   @db.Decimal(5, 2)
+  channelPercent Decimal   @db.Decimal(5, 2)
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  createdAt      DateTime  @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+}
+
+model CreatorPayoutRule {
+  id               String                @id @default(cuid())
+  channelId        String
+  creatorProfileId String
+  ruleType         CreatorPayoutRuleType
+  valueDecimal     Decimal               @db.Decimal(10, 4)
+  effectiveFrom    DateTime
+  effectiveTo      DateTime?
+  createdAt        DateTime              @default(now())
+
+  channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  creatorProfile CreatorProfile @relation(fields: [creatorProfileId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+  @@index([creatorProfileId])
+}
+
+model PayoutLedger {
+  id                String          @id @default(cuid())
+  channelId         String
+  creatorProfileId  String?
+  sourceType        PayoutSourceType
+  sourceReferenceId String?
+  grossAmount       Decimal         @db.Decimal(12, 2)
+  kolboAmount       Decimal         @db.Decimal(12, 2)
+  channelAmount     Decimal         @db.Decimal(12, 2)
+  creatorAmount     Decimal?        @db.Decimal(12, 2)
+  status            PayoutStatus    @default(PENDING)
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  createdAt         DateTime        @default(now())
+
+  channel        Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  creatorProfile CreatorProfile? @relation(fields: [creatorProfileId], references: [id], onDelete: SetNull)
+
+  @@index([channelId])
+  @@index([creatorProfileId])
+  @@index([status])
+}
+
+// ─── CONTENT ─────────────────────────────────────────────
+
+model Category {
+  id        String   @id @default(cuid())
+  channelId String
+  name      String
+  slug      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  videos  Video[]
+
+  @@unique([channelId, slug])
+  @@index([channelId])
+  @@index([sortOrder])
+}
+
+model Video {
+  id                    String          @id @default(cuid())
+  slug                  String          @unique
+  channelId             String
+  creatorProfileId      String?
+  categoryId            String?
+  title                 String
+  description           String?
+  shortDescription      String?
+  status                VideoStatus     @default(DRAFT)
+  visibility            VideoVisibility @default(PUBLIC)
+  publishedAt           DateTime?
+  scheduledPublishAt    DateTime?
+  durationSeconds       Int?
+  releaseDate           DateTime?
+  isFree                Boolean         @default(false)
+  freeWithAds           Boolean         @default(false)
+  cheaperWithAdsAllowed Boolean         @default(false)
+  hasPrerollAds         Boolean         @default(false)
+  hasMidrollAds         Boolean         @default(false)
+  allowDownload         Boolean         @default(false)
+  trailerVideoId        String?
+  previewText           String?
+  stripeProductId       String?
+  createdByUserId       String
+  updatedByUserId       String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  channel          Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  creatorProfile   CreatorProfile? @relation(fields: [creatorProfileId], references: [id], onDelete: SetNull)
+  category         Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdByUser    User            @relation("CreatedByUser", fields: [createdByUserId], references: [id])
+  updatedByUser    User?           @relation("UpdatedByUser", fields: [updatedByUserId], references: [id])
+
+  videoAssets            VideoAsset[]
+  thumbnailAssets        ThumbnailAsset[]
+  tagAssignments         VideoTagAssignment[]
+  scheduledPublications  ScheduledPublication[]
+  contentRowItems        ContentRowItem[]
+  landingHeroes          LandingHero[]
+  homepageElementItems   HomepageElementItem[]
+  rentalOptions          RentalOption[]
+  purchaseOptions        PurchaseOption[]
+  videoAccessRules       VideoAccessRule[]
+  userRentals            UserRental[]
+  userPurchases          UserPurchase[]
+  watchSessions          WatchSession[]
+  watchHistory           WatchHistory[]
+  favorites              Favorite[]
+
+  @@index([slug])
+  @@index([channelId])
+  @@index([creatorProfileId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([visibility])
+}
+
+model VideoAsset {
+  id              String        @id @default(cuid())
+  videoId         String
+  muxUploadId     String?
+  muxAssetId      String?       @unique
+  muxPlaybackId   String?
+  playbackPolicy  PlaybackPolicy @default(SIGNED)
+  assetStatus     AssetStatus   @default(CREATED)
+  durationSeconds Int?
+  aspectRatio     String?
+  masterAccess    String?
+  downloadableUrl String?
+  sourceFileName  String?
+  sourceMimeType  String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@index([muxAssetId])
+  @@index([muxUploadId])
+  @@index([muxPlaybackId])
+}
+
+model ThumbnailAsset {
+  id        String        @id @default(cuid())
+  videoId   String?
+  channelId String?
+  type      ThumbnailType
+  imageUrl  String
+  altText   String?
+  createdAt DateTime      @default(now())
+
+  video           Video?          @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  channel         Channel?        @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  contentRowItems ContentRowItem[]
+
+  @@index([videoId])
+  @@index([channelId])
+}
+
+model VideoTag {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  assignments VideoTagAssignment[]
+
+  @@index([slug])
+}
+
+model VideoTagAssignment {
+  id      String @id @default(cuid())
+  videoId String
+  tagId   String
+
+  video Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  tag   VideoTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, tagId])
+  @@index([videoId])
+  @@index([tagId])
+}
+
+model ScheduledPublication {
+  id        String                     @id @default(cuid())
+  videoId   String
+  publishAt DateTime
+  status    ScheduledPublicationStatus @default(PENDING)
+  createdAt DateTime                   @default(now())
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@index([status])
+}
+
+model ContentRow {
+  id        String              @id @default(cuid())
+  scopeType ContentRowScopeType
+  channelId String?
+  title     String
+  subtitle  String?
+  sortOrder Int                 @default(0)
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  channel Channel?       @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  items   ContentRowItem[]
+
+  @@index([scopeType])
+  @@index([channelId])
+}
+
+model ContentRowItem {
+  id               String  @id @default(cuid())
+  contentRowId     String
+  videoId          String?
+  channelId        String?
+  thumbnailAssetId String?
+  sortOrder        Int     @default(0)
+  createdAt        DateTime @default(now())
+
+  contentRow     ContentRow      @relation(fields: [contentRowId], references: [id], onDelete: Cascade)
+  video          Video?          @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  channel        Channel?        @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  thumbnailAsset ThumbnailAsset? @relation(fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
+
+  @@index([contentRowId])
+}
+
+model LandingHero {
+  id              String                @id @default(cuid())
+  title           String
+  subtitle        String?
+  imageUrl        String
+  destinationType LandingDestinationType
+  channelId       String?
+  videoId         String?
+  externalUrl     String?
+  sortOrder       Int                   @default(0)
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+
+  channel Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  video   Video?   @relation(fields: [videoId], references: [id], onDelete: SetNull)
+
+  @@index([isActive])
+}
+
+model HomepageElement {
+  id        String              @id @default(cuid())
+  type      HomepageElementType
+  channelId String?
+  sortOrder Int                 @default(0)
+  isActive  Boolean             @default(true)
+
+  title     String?
+  subtitle  String?
+  imageUrl  String?
+  text      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  channel Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  items   HomepageElementItem[]
+
+  @@index([sortOrder])
+  @@index([channelId])
+}
+
+model HomepageElementItem {
+  id                String @id @default(cuid())
+  homepageElementId String
+  videoId           String?
+  sortOrder         Int     @default(0)
+  createdAt         DateTime @default(now())
+
+  element HomepageElement @relation(fields: [homepageElementId], references: [id], onDelete: Cascade)
+  video   Video?          @relation(fields: [videoId], references: [id], onDelete: SetNull)
+
+  @@index([homepageElementId])
+}
+
+// ─── COMMERCE / ACCESS ───────────────────────────────────
+
+model SubscriptionPlan {
+  id              String   @id @default(cuid())
+  channelId       String
+  name            String
+  description     String?
+  stripeProductId String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  channel           Channel            @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  priceVariants     PlanPriceVariant[]
+  userSubscriptions UserSubscription[]
+  videoAccessRules  VideoAccessRule[]
+
+  @@index([channelId])
+  @@index([stripeProductId])
+}
+
+model PlanPriceVariant {
+  id              String          @id @default(cuid())
+  planId          String
+  billingInterval BillingInterval
+  concurrencyTier ConcurrencyTier @default(STREAMS_3)
+  adTier          AdTier          @default(WITHOUT_ADS)
+  price           Decimal         @db.Decimal(10, 2)
+  currency        String          @default("usd")
+  stripePriceId   String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  plan              SubscriptionPlan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  userSubscriptions UserSubscription[]
+
+  @@unique([planId, billingInterval, concurrencyTier, adTier])
+  @@index([planId])
+  @@index([stripePriceId])
+}
+
+model Bundle {
+  id              String          @id @default(cuid())
+  slug            String          @unique
+  name            String
+  description     String?
+  billingInterval BillingInterval
+  concurrencyTier ConcurrencyTier @default(STREAMS_3)
+  adTier          AdTier          @default(WITHOUT_ADS)
+  price           Decimal         @db.Decimal(10, 2)
+  currency        String          @default("usd")
+  stripeProductId String?
+  stripePriceId   String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  bundleChannels      BundleChannel[]
+  userBundleSubscriptions UserBundleSubscription[]
+  videoAccessRules    VideoAccessRule[]
+
+  @@index([slug])
+  @@index([stripeProductId])
+  @@index([stripePriceId])
+}
+
+model BundleChannel {
+  id        String @id @default(cuid())
+  bundleId  String
+  channelId String
+
+  bundle  Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([bundleId, channelId])
+  @@index([bundleId])
+  @@index([channelId])
+}
+
+model RentalOption {
+  id              String          @id @default(cuid())
+  videoId         String
+  name            String
+  rentalHours     Int
+  concurrencyTier ConcurrencyTier @default(STREAMS_1)
+  price           Decimal         @db.Decimal(10, 2)
+  currency        String          @default("usd")
+  stripeProductId String?
+  stripePriceId   String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+
+  video            Video             @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userRentals      UserRental[]
+  videoAccessRules VideoAccessRule[]
+
+  @@index([videoId])
+  @@index([stripeProductId])
+}
+
+model PurchaseOption {
+  id              String          @id @default(cuid())
+  videoId         String
+  name            String
+  concurrencyTier ConcurrencyTier @default(STREAMS_1)
+  price           Decimal         @db.Decimal(10, 2)
+  currency        String          @default("usd")
+  stripeProductId String?
+  stripePriceId   String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+
+  video            Video             @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userPurchases    UserPurchase[]
+  videoAccessRules VideoAccessRule[]
+
+  @@index([videoId])
+  @@index([stripeProductId])
+}
+
+model VideoAccessRule {
+  id                 String          @id @default(cuid())
+  videoId            String
+  accessType         VideoAccessType
+  subscriptionPlanId String?
+  bundleId           String?
+  rentalOptionId     String?
+  purchaseOptionId   String?
+  channelId          String?
+  createdAt          DateTime        @default(now())
+
+  video            Video             @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  subscriptionPlan SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id], onDelete: SetNull)
+  bundle           Bundle?           @relation(fields: [bundleId], references: [id], onDelete: SetNull)
+  rentalOption     RentalOption?     @relation(fields: [rentalOptionId], references: [id], onDelete: SetNull)
+  purchaseOption   PurchaseOption?   @relation(fields: [purchaseOptionId], references: [id], onDelete: SetNull)
+  channel          Channel?          @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([videoId])
+  @@index([accessType])
+}
+
+model DiscountCode {
+  id                   String          @id @default(cuid())
+  code                 String          @unique
+  description          String?
+  discountType         DiscountType
+  amount               Decimal         @db.Decimal(10, 2)
+  durationType         DiscountDuration
+  durationInMonths     Int?
+  activeFrom           DateTime?
+  activeTo             DateTime?
+  maxRedemptions       Int?
+  redemptionCount      Int             @default(0)
+  isActive             Boolean         @default(true)
+  stripeCouponId       String?
+  stripePromotionCodeId String?
+  createdAt            DateTime        @default(now())
+
+  channels DiscountCodeChannel[]
+
+  @@index([code])
+  @@index([stripeCouponId])
+}
+
+model DiscountCodeChannel {
+  id             String @id @default(cuid())
+  discountCodeId String
+  channelId      String
+
+  discountCode DiscountCode @relation(fields: [discountCodeId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([discountCodeId, channelId])
+  @@index([discountCodeId])
+  @@index([channelId])
+}
+
+model PaymentMethod {
+  id                    String  @id @default(cuid())
+  userId                String
+  stripePaymentMethodId String  @unique
+  brand                 String?
+  last4                 String?
+  expMonth              Int?
+  expYear               Int?
+  isDefault             Boolean @default(false)
+  createdAt             DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([stripePaymentMethodId])
+}
+
+model UserSubscription {
+  id                      String             @id @default(cuid())
+  userId                  String
+  channelId               String
+  subscriptionPlanId      String
+  priceVariantId          String?
+  stripeSubscriptionId    String?            @unique
+  stripePriceId           String?
+  stripeCheckoutSessionId String?
+  status                  SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean            @default(false)
+  canceledAt              DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel          Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  subscriptionPlan SubscriptionPlan  @relation(fields: [subscriptionPlanId], references: [id])
+  priceVariant     PlanPriceVariant? @relation(fields: [priceVariantId], references: [id])
+
+  @@index([userId])
+  @@index([channelId])
+  @@index([stripeSubscriptionId])
+  @@index([status])
+}
+
+model UserBundleSubscription {
+  id                      String             @id @default(cuid())
+  userId                  String
+  bundleId                String
+  stripeSubscriptionId    String?            @unique
+  stripePriceId           String?
+  stripeCheckoutSessionId String?
+  status                  SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean            @default(false)
+  canceledAt              DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bundle Bundle @relation(fields: [bundleId], references: [id])
+
+  @@index([userId])
+  @@index([bundleId])
+  @@index([stripeSubscriptionId])
+  @@index([status])
+}
+
+model UserRental {
+  id                      String       @id @default(cuid())
+  userId                  String
+  videoId                 String
+  rentalOptionId          String
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
+  purchasedAt             DateTime     @default(now())
+  accessStartsAt          DateTime     @default(now())
+  accessEndsAt            DateTime
+  status                  RentalStatus @default(ACTIVE)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video        Video        @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  rentalOption RentalOption @relation(fields: [rentalOptionId], references: [id])
+
+  @@index([userId])
+  @@index([videoId])
+  @@index([status])
+}
+
+model UserPurchase {
+  id                      String         @id @default(cuid())
+  userId                  String
+  videoId                 String
+  purchaseOptionId        String
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
+  purchasedAt             DateTime       @default(now())
+  status                  PurchaseStatus @default(ACTIVE)
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video          Video          @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  purchaseOption PurchaseOption @relation(fields: [purchaseOptionId], references: [id])
+
+  @@unique([userId, videoId, purchaseOptionId])
+  @@index([userId])
+  @@index([videoId])
+}
+
+model InvoiceLog {
+  id                    String   @id @default(cuid())
+  userId                String?
+  stripeCustomerId      String?
+  stripeInvoiceId       String?
+  stripeSubscriptionId  String?
+  stripePaymentIntentId String?
+  eventType             String
+  amount                Decimal? @db.Decimal(12, 2)
+  currency              String?
+  rawPayloadJson        Json?
+  createdAt             DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([stripeCustomerId])
+  @@index([stripeInvoiceId])
+  @@index([eventType])
+}
+
+// ─── WATCHING / ENFORCEMENT ──────────────────────────────
+
+model WatchSession {
+  id               String          @id @default(cuid())
+  userId           String
+  profileId        String?
+  videoId          String
+  deviceId         String?
+  startedAt        DateTime        @default(now())
+  lastHeartbeatAt  DateTime        @default(now())
+  endedAt          DateTime?
+  playbackSeconds  Int?
+  muxPlaybackId    String?
+  accessSourceType AccessSourceType
+  createdAt        DateTime        @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  video   Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  device  Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([videoId])
+  @@index([userId, endedAt])
+}
+
+model StreamConcurrencyLimit {
+  id         String @id @default(cuid())
+  tierKey    String @unique
+  maxStreams Int
+
+  @@index([tierKey])
+}
+
+model WatchHistory {
+  id              String   @id @default(cuid())
+  userId          String
+  profileId       String?
+  videoId         String
+  progressSeconds Int      @default(0)
+  completed       Boolean  @default(false)
+  lastWatchedAt   DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  video   Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, profileId, videoId])
+  @@index([userId])
+  @@index([videoId])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  profileId String?
+  videoId   String
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  video   Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, profileId, videoId])
+  @@index([userId])
+  @@index([videoId])
+}

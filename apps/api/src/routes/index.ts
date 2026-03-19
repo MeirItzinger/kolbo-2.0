@@ -1,0 +1,51 @@
+import { Router } from "express";
+
+import authRoutes from "./auth";
+import channelRoutes from "./channels";
+import creatorRoutes from "./creators";
+import videoRoutes from "./videos";
+import contentRowRoutes from "./contentRows";
+import landingHeroRoutes from "./landingHeroes";
+import homepageElementRoutes from "./homepageElements";
+import subscriptionPlanRoutes from "./subscriptionPlans";
+import bundleRoutes from "./bundles";
+import discountCodeRoutes from "./discountCodes";
+import stripeRoutes from "./stripe";
+import muxRoutes from "./mux";
+import playbackRoutes from "./playback";
+import watchSessionRoutes from "./watchSessions";
+import accountRoutes from "./account";
+import profileRoutes from "./profiles";
+import webhookRoutes from "./webhooks";
+import uploadRoutes from "./uploads";
+import channelPageElementRoutes from "./channelPageElements";
+import categoryRoutes from "./categories";
+import channelSalesRoutes from "./channelSales";
+import salesRoutes from "./sales";
+
+const router = Router();
+
+router.use("/auth", authRoutes);
+router.use("/channels", channelRoutes);
+router.use("/creators", creatorRoutes);
+router.use("/videos", videoRoutes);
+router.use("/content-rows", contentRowRoutes);
+router.use("/landing-heroes", landingHeroRoutes);
+router.use("/homepage-elements", homepageElementRoutes);
+router.use("/subscription-plans", subscriptionPlanRoutes);
+router.use("/bundles", bundleRoutes);
+router.use("/discount-codes", discountCodeRoutes);
+router.use("/stripe", stripeRoutes);
+router.use("/mux", muxRoutes);
+router.use("/playback", playbackRoutes);
+router.use("/watch-sessions", watchSessionRoutes);
+router.use("/account", accountRoutes);
+router.use("/profiles", profileRoutes);
+router.use("/webhooks", webhookRoutes);
+router.use("/uploads", uploadRoutes);
+router.use("/channels", channelPageElementRoutes);
+router.use("/channels", categoryRoutes);
+router.use("/channels", channelSalesRoutes);
+router.use("/sales", salesRoutes);
+
+export default router;

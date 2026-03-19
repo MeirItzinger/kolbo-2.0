@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Environment (keep .env.example)
+.env
+.env.local
+.env.*.local
+apps/api/.env
+apps/web/.env
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+apps/web/dist/
+apps/api/dist/
+
+# Logs and debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Prisma
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+
+# Vite
+*.local
+
+# Test / coverage
+coverage/
+.nyc_output/
