@@ -10,18 +10,6 @@ import { Spinner } from "@/components/ui/Spinner";
 import { formatCurrency } from "@/lib/utils";
 import type { HomepageElement, Video } from "@/types";
 
-/**
- * Production-only hero image for the welcome block. CMS rows often store
- * `http://localhost:4000/uploads/...`, which cannot load on Vercel.
- * Add your file as `apps/web/public/welcome-kolbo-hero.jpg` (or set VITE_WELCOME_KOLBO_HERO_URL).
- */
-const WELCOME_KOLBO_HERO_STATIC_SRC =
-  import.meta.env.VITE_WELCOME_KOLBO_HERO_URL || "/welcome-kolbo-hero.jpg";
-
-function isWelcomeKolboTitle(title: string | undefined): boolean {
-  return (title ?? "").trim().toLowerCase() === "welcome to kolbo";
-}
-
 export default function HomePage() {
   const elementsQuery = useQuery({
     queryKey: ["landing", "homepage-elements"],
@@ -134,22 +122,10 @@ function HeroSection({ element }: { element: HomepageElement }) {
       .map((item) => item.video)
       .find((v): v is Video => !!v && !!v.slug) ?? null;
 
-  const resolvedFromCms = element.imageUrl
+  /** CMS may store dev URLs; resolveUploadedAssetUrl rewrites localhost uploads to this deployment’s API origin. */
+  const imgSrc = element.imageUrl
     ? resolveUploadedAssetUrl(element.imageUrl)
     : null;
-
-  const dbImageIsLocalDevOnly =
-    !!element.imageUrl &&
-    /localhost|127\.0\.0\.1/i.test(element.imageUrl);
-
-  const useStaticWelcomeKolboHero =
-    import.meta.env.PROD &&
-    isWelcomeKolboTitle(element.title) &&
-    (dbImageIsLocalDevOnly || !element.imageUrl);
-
-  const imgSrc = useStaticWelcomeKolboHero
-    ? WELCOME_KOLBO_HERO_STATIC_SRC
-    : resolvedFromCms;
 
   return (
     <section className="relative min-h-[420px] sm:min-h-[520px]">
