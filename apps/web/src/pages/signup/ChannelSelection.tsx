@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, Tv, Package } from "lucide-react";
 import { listChannels } from "@/api/channels";
@@ -225,6 +225,17 @@ function ChannelCard({
   const [billing, setBilling] = useState<BillingChoice>("MONTHLY");
   const [concurrency, setConcurrency] = useState<3 | 5>(3);
   const [withAds, setWithAds] = useState(false);
+
+  useEffect(() => {
+    const v = selection?.variant;
+    if (!v) return;
+    if (v.billingInterval === "MONTHLY" || v.billingInterval === "YEARLY") {
+      setBilling(v.billingInterval);
+    }
+    if (v.concurrencyTier === "STREAMS_3") setConcurrency(3);
+    else if (v.concurrencyTier === "STREAMS_5") setConcurrency(5);
+    setWithAds(v.adTier === "WITH_ADS");
+  }, [selection?.variant?.id]);
 
   const plans = (channel.subscriptionPlans ?? []).filter((p) => p.isActive);
 

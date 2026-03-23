@@ -978,7 +978,11 @@ function PaywallPrompt({
                   </p>
                 </div>
                 <Button size="sm" asChild>
-                  <Link to={`/pricing/${channelSlug}`}>Subscribe</Link>
+                  <Link
+                    to={`/pricing/${channelSlug}?variant=${encodeURIComponent(variant.id)}`}
+                  >
+                    Subscribe
+                  </Link>
                 </Button>
               </div>
             );

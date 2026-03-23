@@ -30,8 +30,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const from = (location.state as { from?: { pathname: string } })?.from
-    ?.pathname ?? "/explore";
+  const rawFrom = (location.state as {
+    from?: string | { pathname: string; search?: string };
+  })?.from;
+  const from =
+    typeof rawFrom === "string"
+      ? rawFrom
+      : rawFrom?.pathname
+        ? `${rawFrom.pathname}${rawFrom.search ?? ""}`
+        : "/explore";
 
   const {
     register,

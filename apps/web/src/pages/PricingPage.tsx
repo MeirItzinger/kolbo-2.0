@@ -1,5 +1,11 @@
-import { useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import {
+  Link,
+  useParams,
+  useNavigate,
+  useSearchParams,
+  useLocation,
+} from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Tv, ArrowLeft } from "lucide-react";
 import { getChannel } from "@/api/channels";
@@ -9,22 +15,31 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn, formatCurrency } from "@/lib/utils";
-import type { SubscriptionPlan, PlanPriceVariant } from "@/types";
+import type { SubscriptionPlan, PlanPriceVariant, AdTier } from "@/types";
 
 type Interval = "MONTHLY" | "YEARLY";
 type StreamTier = "STREAMS_3" | "STREAMS_5";
 
 export default function PricingPage() {
   const { channelSlug } = useParams<{ channelSlug: string }>();
+  const [searchParams] = useSearchParams();
+  const presetVariantId = searchParams.get("variant");
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [interval, setInterval] = useState<Interval>("MONTHLY");
   const [streamTier, setStreamTier] = useState<StreamTier>("STREAMS_3");
+  const [adTier, setAdTier] = useState<AdTier>("WITHOUT_ADS");
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const [presetApplied, setPresetApplied] = useState(false);
 
   async function handleSubscribe(_plan: SubscriptionPlan, variant: PlanPriceVariant) {
     if (!isAuthenticated) {
-      navigate("/login", { state: { from: { pathname: `/pricing/${channelSlug}` } } });
+      navigate("/login", {
+        state: {
+          from: `${location.pathname}${location.search}`,
+        },
+      });
       return;
     }
     try {
@@ -57,13 +72,55 @@ export default function PricingPage() {
     (p.priceVariants ?? []).some((v) => v.billingInterval === "YEARLY"),
   );
 
+  const hasWithAdsOption = useMemo(
+    () =>
+      plans.some((p) =>
+        (p.priceVariants ?? []).some((v) => v.isActive && v.adTier === "WITH_ADS"),
+      ),
+    [plans],
+  );
+
+  /** Apply ?variant= from paywall so toggles match the row the user chose */
+  useEffect(() => {
+    if (!presetVariantId || presetApplied) return;
+    if (!channelQuery.isSuccess || !channel) return;
+
+    if (plans.length === 0) {
+      setPresetApplied(true);
+      return;
+    }
+
+    for (const plan of plans) {
+      const v = (plan.priceVariants ?? []).find(
+        (x) => x.id === presetVariantId && x.isActive,
+      );
+      if (!v) continue;
+      if (v.billingInterval === "MONTHLY" || v.billingInterval === "YEARLY") {
+        setInterval(v.billingInterval);
+      }
+      if (v.concurrencyTier === "STREAMS_3" || v.concurrencyTier === "STREAMS_5") {
+        setStreamTier(v.concurrencyTier);
+      }
+      setAdTier(v.adTier);
+      setPresetApplied(true);
+      return;
+    }
+    setPresetApplied(true);
+  }, [
+    channel,
+    channelQuery.isSuccess,
+    plans,
+    presetVariantId,
+    presetApplied,
+  ]);
+
   function findVariant(plan: SubscriptionPlan): PlanPriceVariant | undefined {
     return (plan.priceVariants ?? []).find(
       (v) =>
         v.isActive &&
         v.billingInterval === interval &&
         v.concurrencyTier === streamTier &&
-        v.adTier === "WITHOUT_ADS",
+        v.adTier === adTier,
     );
   }
 
@@ -172,6 +229,35 @@ export default function PricingPage() {
             5 Streams
           </button>
         </div>
+
+        {hasWithAdsOption && (
+          <div className="flex rounded-lg border border-surface-700 bg-surface-800">
+            <button
+              type="button"
+              onClick={() => setAdTier("WITHOUT_ADS")}
+              className={cn(
+                "rounded-l-lg px-5 py-2 text-sm font-medium transition-colors",
+                adTier === "WITHOUT_ADS"
+                  ? "bg-primary-600 text-white"
+                  : "text-surface-400 hover:text-white",
+              )}
+            >
+              No ads
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdTier("WITH_ADS")}
+              className={cn(
+                "rounded-r-lg px-5 py-2 text-sm font-medium transition-colors",
+                adTier === "WITH_ADS"
+                  ? "bg-primary-600 text-white"
+                  : "text-surface-400 hover:text-white",
+              )}
+            >
+              With ads
+            </button>
+          </div>
+        )}
       </div>
 
       {plans.length === 0 ? (
