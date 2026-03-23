@@ -21,35 +21,18 @@ interface CreateCampaignInput {
 }
 
 /**
- * Returns active channels that have at least one published video with ad
- * inventory (freeWithAds, hasPrerollAds, or hasMidrollAds). Channels with
- * zero such videos are excluded so the picker only shows real placement options.
+ * Channels where ads can run: published videos with direct ad slots
+ * (free with ads / preroll / midroll), OR published videos gated by a
+ * subscription plan that has an active "with ads" (cheaper) price variant.
  */
 export async function getAdEligibleChannels() {
-  return prisma.channel.findMany({
+  const channels = await prisma.channel.findMany({
     where: {
       isActive: true,
-      videos: {
-        some: {
-          status: "PUBLISHED",
-          OR: [
-            { freeWithAds: true },
-            { hasPrerollAds: true },
-            { hasMidrollAds: true },
-          ],
-        },
-      },
-    },
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      slug: true,
-      name: true,
-      logoUrl: true,
-      _count: {
-        select: {
+      OR: [
+        {
           videos: {
-            where: {
+            some: {
               status: "PUBLISHED",
               OR: [
                 { freeWithAds: true },
@@ -59,9 +42,65 @@ export async function getAdEligibleChannels() {
             },
           },
         },
-      },
+        {
+          subscriptionPlans: {
+            some: {
+              isActive: true,
+              priceVariants: {
+                some: { adTier: "WITH_ADS", isActive: true },
+              },
+              videoAccessRules: {
+                some: {
+                  accessType: "SUBSCRIPTION",
+                  video: { status: "PUBLISHED" },
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      logoUrl: true,
     },
   });
+
+  const withCounts = await Promise.all(
+    channels.map(async (ch) => {
+      const videos = await prisma.video.count({
+        where: {
+          channelId: ch.id,
+          status: "PUBLISHED",
+          OR: [
+            { freeWithAds: true },
+            { hasPrerollAds: true },
+            { hasMidrollAds: true },
+            {
+              videoAccessRules: {
+                some: {
+                  accessType: "SUBSCRIPTION",
+                  subscriptionPlan: {
+                    channelId: ch.id,
+                    isActive: true,
+                    priceVariants: {
+                      some: { adTier: "WITH_ADS", isActive: true },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+      return { ...ch, _count: { videos } };
+    }),
+  );
+
+  return withCounts.filter((c) => c._count.videos > 0);
 }
 
 export async function createCampaign(
