@@ -254,6 +254,7 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     sortBy = "createdAt",
     order = "desc",
     forAdmin,
+    categoryId,
   } = req.query;
 
   const take = Math.min(Number(limit) || 20, 250);
@@ -270,6 +271,9 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
       { title: { contains: search as string, mode: "insensitive" } },
       { description: { contains: search as string, mode: "insensitive" } },
     ];
+  }
+  if (categoryId) {
+    where.categoryLinks = { some: { categoryId: categoryId as string } };
   }
 
   const adminListRequest =

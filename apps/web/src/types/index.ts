@@ -89,6 +89,7 @@ export interface Category {
   channelId: string;
   name: string;
   slug: string;
+  icon?: string | null;
   sortOrder: number;
   isActive: boolean;
   _count?: { videos?: number; videoLinks?: number };

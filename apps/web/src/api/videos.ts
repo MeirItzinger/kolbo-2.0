@@ -8,6 +8,7 @@ export async function listVideos(params?: {
   creatorProfileId?: string;
   status?: string;
   search?: string;
+  categoryId?: string;
 }): Promise<PaginatedResponse<Video>> {
   const { perPage, ...rest } = params ?? {};
   const { data } = await api.get("/videos", {

@@ -26,9 +26,18 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
+export const listAll = asyncHandler(async (_req: Request, res: Response) => {
+  const categories = await prisma.category.findMany({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, slug: true, icon: true, channelId: true },
+  });
+  return res.json({ status: "success", data: categories });
+});
+
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const { channelId } = req.params;
-  const { name, slug, sortOrder, isActive } = req.body;
+  const { name, slug, sortOrder, isActive, icon } = req.body;
 
   if (!name || !slug) throw ApiError.badRequest("Name and slug are required");
 
@@ -49,6 +58,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
         channelId,
         name,
         slug,
+        icon: icon ?? null,
         sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
         isActive: isActive ?? true,
       },
@@ -61,6 +71,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
         channelId,
         name,
         slug,
+        icon: icon ?? null,
         sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
         isActive: isActive ?? true,
       },
@@ -73,7 +84,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { channelId, id } = req.params;
-  const { name, slug, sortOrder, isActive } = req.body;
+  const { name, slug, sortOrder, isActive, icon } = req.body;
 
   const category = await prisma.category.findFirst({
     where: { id, channelId },
@@ -96,6 +107,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
         ...(slug !== undefined && { slug }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isActive !== undefined && { isActive }),
+        ...(icon !== undefined && { icon }),
       },
       include: { _count: { select: { videoLinks: true } } },
     });
@@ -108,6 +120,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
         ...(slug !== undefined && { slug }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isActive !== undefined && { isActive }),
+        ...(icon !== undefined && { icon }),
       },
     });
     updated = { ...updated, _count: { videoLinks: 0 } };

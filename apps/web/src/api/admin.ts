@@ -349,7 +349,7 @@ export async function adminListCategories(channelId: string): Promise<Category[]
 
 export async function adminCreateCategory(
   channelId: string,
-  payload: { name: string; slug: string; sortOrder?: number; isActive?: boolean },
+  payload: { name: string; slug: string; icon?: string | null; sortOrder?: number; isActive?: boolean },
 ): Promise<Category> {
   const { data } = await api.post(`/channels/${channelId}/categories`, payload);
   return unwrap(data);
@@ -358,7 +358,7 @@ export async function adminCreateCategory(
 export async function adminUpdateCategory(
   channelId: string,
   id: string,
-  payload: Partial<{ name: string; slug: string; sortOrder: number; isActive: boolean }>,
+  payload: Partial<{ name: string; slug: string; icon: string | null; sortOrder: number; isActive: boolean }>,
 ): Promise<Category> {
   const { data } = await api.patch(`/channels/${channelId}/categories/${id}`, payload);
   return unwrap(data);

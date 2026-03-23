@@ -19,7 +19,7 @@ import profileRoutes from "./profiles";
 import webhookRoutes from "./webhooks";
 import uploadRoutes from "./uploads";
 import channelPageElementRoutes from "./channelPageElements";
-import categoryRoutes from "./categories";
+import categoryRoutes, { categoryPublicRouter } from "./categories";
 import channelSalesRoutes from "./channelSales";
 import salesRoutes from "./sales";
 import advertiserAuthRoutes from "./advertiserAuth";
@@ -50,6 +50,7 @@ router.use("/webhooks", webhookRoutes);
 router.use("/uploads", uploadRoutes);
 router.use("/channels", channelPageElementRoutes);
 router.use("/channels", categoryRoutes);
+router.use("/categories", categoryPublicRouter);
 router.use("/channels", channelSalesRoutes);
 router.use("/sales", salesRoutes);
 

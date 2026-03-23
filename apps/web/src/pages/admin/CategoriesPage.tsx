@@ -53,6 +53,7 @@ import { CSS } from "@dnd-kit/utilities";
 const categorySchema = z.object({
   name: z.string().min(1, "Name is required"),
   slug: z.string().min(1, "Slug is required"),
+  icon: z.string().optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -315,9 +316,10 @@ function SortableCategoryRow({
       >
         <GripVertical className="h-5 w-5" />
       </button>
-      <div className="flex-1">
+      <div className="flex flex-1 items-center gap-2">
+        {category.icon && <span className="text-lg leading-none">{category.icon}</span>}
         <span className="font-medium text-white">{category.name}</span>
-        <span className="ml-3 text-xs text-surface-500">{category.slug}</span>
+        <span className="ml-1 text-xs text-surface-500">{category.slug}</span>
       </div>
       <Badge variant="outline">{videoCount} video{videoCount !== 1 ? "s" : ""}</Badge>
       <Badge variant={category.isActive ? "success" : "secondary"}>
@@ -354,8 +356,8 @@ function CategoryFormDialog({
   } = useForm<CategoryFormData>({
     resolver: zodResolver(categorySchema),
     defaultValues: category
-      ? { name: category.name, slug: category.slug, isActive: category.isActive }
-      : { isActive: true },
+      ? { name: category.name, slug: category.slug, icon: category.icon ?? "", isActive: category.isActive }
+      : { isActive: true, icon: "" },
   });
 
   const watchName = watch("name");
@@ -412,6 +414,19 @@ function CategoryFormDialog({
                   {errors.name.message}
                 </p>
               )}
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-surface-300">
+                Icon <span className="text-surface-500">(emoji)</span>
+              </label>
+              <Input
+                {...register("icon")}
+                placeholder="e.g. 📖"
+                className="w-24 text-xl"
+              />
+              <p className="mt-1 text-xs text-surface-500">
+                Paste a single emoji to display on the catalogue page.
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-surface-300">

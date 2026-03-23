@@ -13,4 +13,11 @@ router.patch("/:channelId/categories/:id", ...adminAuth, ctrl.update);
 router.delete("/:channelId/categories/:id", ...adminAuth, ctrl.remove);
 router.post("/:channelId/categories/reorder", ...adminAuth, ctrl.reorder);
 
+export { router as categoryChannelRouter };
+
+// Standalone public router for /categories
+const publicRouter = Router();
+publicRouter.get("/", ctrl.listAll);
+export { publicRouter as categoryPublicRouter };
+
 export default router;

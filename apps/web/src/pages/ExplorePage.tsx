@@ -1,8 +1,7 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Search, Tv, X, Lock, ChevronLeft, ChevronRight, Compass } from "lucide-react";
-import { getContentRows } from "@/api/landing";
+import { Play, Search, Tv, X, Lock, Compass, LayoutGrid } from "lucide-react";
 import { listChannels } from "@/api/channels";
 import { listVideos } from "@/api/videos";
 import { Input } from "@/components/ui/Input";
@@ -10,45 +9,38 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
-import type { ContentRow, Video } from "@/types";
+import type { Video } from "@/types";
 
 export default function ExplorePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const channelFilter = searchParams.get("channel") ?? "";
   const [searchTerm, setSearchTerm] = useState("");
-  const pillsRef = useRef<HTMLDivElement>(null);
 
   const channelsQuery = useQuery({
     queryKey: ["explore", "channels"],
     queryFn: () => listChannels({ perPage: 50 }),
   });
 
-  const rowsQuery = useQuery({
-    queryKey: ["explore", "rows", channelFilter],
+  const videosQuery = useQuery({
+    queryKey: ["explore", "videos", channelFilter, searchTerm],
     queryFn: () =>
-      getContentRows(channelFilter ? { channelId: channelFilter } : undefined),
-  });
-
-  const searchQuery = useQuery({
-    queryKey: ["explore", "search", searchTerm],
-    queryFn: () => listVideos({ search: searchTerm, perPage: 24 }),
-    enabled: searchTerm.length >= 2,
+      listVideos({
+        perPage: 48,
+        ...(channelFilter ? { channelId: channelFilter } : {}),
+        ...(searchTerm.length >= 2 ? { search: searchTerm } : {}),
+      }),
+    enabled: searchTerm.length === 0 || searchTerm.length >= 2,
   });
 
   const channels = channelsQuery.data?.data ?? [];
-  const rows = rowsQuery.data ?? [];
-  const searchResults = searchQuery.data?.data ?? [];
+  const videos = videosQuery.data?.data ?? [];
+  const activeChannel = channels.find((c) => c.id === channelFilter);
 
   const setChannel = (id: string) => {
+    setSearchTerm("");
     if (id) setSearchParams({ channel: id });
     else setSearchParams({});
   };
-
-  const scrollPills = (dir: "left" | "right") => {
-    pillsRef.current?.scrollBy({ left: dir === "left" ? -260 : 260, behavior: "smooth" });
-  };
-
-  const activeChannel = channels.find((ch) => ch.id === channelFilter);
 
   return (
     <div className="min-h-screen bg-surface-950">
@@ -62,16 +54,16 @@ export default function ExplorePage() {
               <Compass className="h-4 w-4 text-primary-400" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              Browse
+              Catalogue
             </h1>
           </div>
           <p className="mb-6 ml-[42px] text-sm text-surface-400">
             {activeChannel
-              ? `Showing content from ${activeChannel.name}`
-              : "Discover videos across all channels"}
+              ? `Browsing: ${activeChannel.name}`
+              : "Browse all videos by channel"}
           </p>
 
-          {/* Search bar */}
+          {/* Search */}
           <div className="relative max-w-2xl">
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-surface-500" />
             <Input
@@ -94,145 +86,122 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      {/* Channel filter — sticky horizontal scroll strip */}
-      {channels.length > 0 && (
-        <div className="sticky top-16 z-10 border-b border-surface-800/60 bg-surface-950/90 backdrop-blur-md">
-          <div className="relative mx-auto max-w-7xl">
-            {/* Left fade + arrow */}
-            <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 w-14">
-              <div className="h-full w-full bg-gradient-to-r from-surface-950 via-surface-950/80 to-transparent" />
-            </div>
-            <button
-              type="button"
-              onClick={() => scrollPills("left")}
-              className="absolute left-1.5 top-1/2 z-20 -translate-y-1/2 rounded-full bg-surface-800 p-1 text-surface-300 shadow-md transition-colors hover:bg-surface-700 hover:text-white"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-
-            <div
-              ref={pillsRef}
-              className="flex gap-2 overflow-x-auto scrollbar-none px-10 py-3"
-            >
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-10">
+        {/* Channel cards */}
+        {channels.length > 0 && !searchTerm && (
+          <section>
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-surface-500">
+              <LayoutGrid className="h-4 w-4" />
+              Channels
+            </h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {/* "All" card */}
               <button
                 type="button"
                 onClick={() => setChannel("")}
                 className={cn(
-                  "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                  "group flex flex-col items-center justify-center gap-3 rounded-2xl border p-5 text-center transition-all",
                   !channelFilter
-                    ? "bg-primary-600 text-white shadow-sm shadow-primary-900/60 ring-1 ring-primary-500/50"
-                    : "bg-surface-800 text-surface-300 hover:bg-surface-700 hover:text-white",
+                    ? "border-primary-500/60 bg-primary-600/15 ring-1 ring-primary-500/40"
+                    : "border-surface-800 bg-surface-900 hover:border-surface-600 hover:bg-surface-800",
                 )}
               >
-                All
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-surface-700">
+                  <Tv className="h-7 w-7 text-surface-400" />
+                </div>
+                <span
+                  className={cn(
+                    "text-sm font-semibold",
+                    !channelFilter ? "text-primary-300" : "text-surface-200 group-hover:text-white",
+                  )}
+                >
+                  All
+                </span>
               </button>
+
               {channels.map((ch) => (
                 <button
                   key={ch.id}
                   type="button"
                   onClick={() => setChannel(ch.id)}
                   className={cn(
-                    "shrink-0 flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                    "group flex flex-col items-center justify-center gap-3 rounded-2xl border p-5 text-center transition-all",
                     channelFilter === ch.id
-                      ? "bg-primary-600 text-white shadow-sm shadow-primary-900/60 ring-1 ring-primary-500/50"
-                      : "bg-surface-800 text-surface-300 hover:bg-surface-700 hover:text-white",
+                      ? "border-primary-500/60 bg-primary-600/15 ring-1 ring-primary-500/40"
+                      : "border-surface-800 bg-surface-900 hover:border-surface-600 hover:bg-surface-800",
                   )}
                 >
                   {ch.logoUrl ? (
-                    <img src={ch.logoUrl} alt="" className="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
+                    <img
+                      src={ch.logoUrl}
+                      alt={ch.name}
+                      className="h-14 w-14 rounded-xl object-cover"
+                    />
                   ) : (
-                    <Tv className="h-3.5 w-3.5 shrink-0" />
+                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-surface-700">
+                      <Tv className="h-7 w-7 text-surface-400" />
+                    </div>
                   )}
-                  {ch.name}
+                  <span
+                    className={cn(
+                      "line-clamp-2 text-sm font-semibold leading-snug",
+                      channelFilter === ch.id
+                        ? "text-primary-300"
+                        : "text-surface-200 group-hover:text-white",
+                    )}
+                  >
+                    {ch.name}
+                  </span>
                 </button>
               ))}
             </div>
-
-            {/* Right fade + arrow */}
-            <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-10 w-14">
-              <div className="h-full w-full bg-gradient-to-l from-surface-950 via-surface-950/80 to-transparent" />
-            </div>
-            <button
-              type="button"
-              onClick={() => scrollPills("right")}
-              className="absolute right-1.5 top-1/2 z-20 -translate-y-1/2 rounded-full bg-surface-800 p-1 text-surface-300 shadow-md transition-colors hover:bg-surface-700 hover:text-white"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Content area */}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {searchTerm.length >= 2 ? (
-          <div>
-            <h2 className="mb-6 text-xl font-semibold text-white">
-              Results for &ldquo;{searchTerm}&rdquo;
-            </h2>
-            {searchQuery.isLoading ? (
-              <div className="flex justify-center py-16">
-                <Spinner size="lg" />
-              </div>
-            ) : searchResults.length > 0 ? (
-              <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-                {searchResults.map((video) => (
-                  <VideoCard key={video.id} video={video} />
-                ))}
-              </div>
-            ) : (
-              <div className="py-20 text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-800">
-                  <Search className="h-7 w-7 text-surface-500" />
-                </div>
-                <p className="font-medium text-surface-300">No results found</p>
-                <p className="mt-1 text-sm text-surface-500">Try a different search term</p>
-              </div>
-            )}
-          </div>
-        ) : rowsQuery.isLoading ? (
-          <div className="flex justify-center py-16">
-            <Spinner size="lg" />
-          </div>
-        ) : rows.length > 0 ? (
-          <div className="space-y-12">
-            {rows.map((row) => (
-              <ContentSection key={row.id} row={row} />
-            ))}
-          </div>
-        ) : (
-          <div className="py-20 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-800">
-              <Tv className="h-7 w-7 text-surface-500" />
-            </div>
-            <p className="font-medium text-surface-300">No content available yet</p>
-            <p className="mt-1 text-sm text-surface-500">Check back soon</p>
-            <Button variant="outline" className="mt-6" asChild>
-              <Link to="/">Back to Home</Link>
-            </Button>
-          </div>
+          </section>
         )}
+
+        {/* Video grid */}
+        <section>
+          {(channelFilter || searchTerm.length >= 2) && (
+            <h2 className="mb-5 text-xl font-semibold text-white">
+              {searchTerm.length >= 2
+                ? `Results for "${searchTerm}"`
+                : activeChannel?.name ?? "All Videos"}
+            </h2>
+          )}
+
+          {videosQuery.isLoading ? (
+            <div className="flex justify-center py-16">
+              <Spinner size="lg" />
+            </div>
+          ) : videos.length > 0 ? (
+            <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+              {videos.map((video) => (
+                <VideoCard key={video.id} video={video} />
+              ))}
+            </div>
+          ) : (
+            <div className="py-20 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-800">
+                {searchTerm ? (
+                  <Search className="h-7 w-7 text-surface-500" />
+                ) : (
+                  <Tv className="h-7 w-7 text-surface-500" />
+                )}
+              </div>
+              <p className="font-medium text-surface-300">
+                {searchTerm ? "No results found" : "No videos in this channel yet"}
+              </p>
+              {searchTerm ? (
+                <p className="mt-1 text-sm text-surface-500">Try a different search term</p>
+              ) : (
+                <Button variant="outline" className="mt-6" onClick={() => setChannel("")}>
+                  View all channels
+                </Button>
+              )}
+            </div>
+          )}
+        </section>
       </div>
     </div>
-  );
-}
-
-function ContentSection({ row }: { row: ContentRow }) {
-  const items = row.items ?? [];
-  const videos = items
-    .map((item) => (item as any).video)
-    .filter(Boolean) as Video[];
-  if (videos.length === 0) return null;
-
-  return (
-    <section>
-      <h2 className="mb-5 text-xl font-semibold text-white">{row.title}</h2>
-      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-        {videos.map((video) => (
-          <VideoCard key={video.id} video={video} />
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -255,7 +224,6 @@ function VideoCard({ video }: { video: Video }) {
       to={`/videos/${video.slug}`}
       className="group flex flex-col overflow-hidden rounded-xl border border-surface-800 bg-surface-900 transition-all hover:border-surface-600 hover:shadow-lg hover:shadow-black/30"
     >
-      {/* Thumbnail */}
       <div className="relative aspect-video overflow-hidden bg-surface-800">
         {thumbnailUrl ? (
           <img
@@ -268,30 +236,22 @@ function VideoCard({ video }: { video: Video }) {
             <Play className="h-10 w-10 text-surface-600" />
           </div>
         )}
-
-        {/* Hover overlay */}
         <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-all duration-300 group-hover:bg-black/40">
           <div className="flex h-12 w-12 scale-75 items-center justify-center rounded-full bg-white/20 opacity-0 backdrop-blur-sm transition-all duration-300 group-hover:scale-100 group-hover:opacity-100">
             <Play className="h-5 w-5 fill-white text-white" />
           </div>
         </div>
-
-        {/* Duration badge */}
         {duration && (
           <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-medium text-white">
             {formatDuration(duration)}
           </span>
         )}
-
-        {/* Free badge */}
         {video.isFree && (
           <span className="absolute left-2 top-2">
             <Badge className="text-[10px]">Free</Badge>
           </span>
         )}
       </div>
-
-      {/* Info */}
       <div className="flex flex-1 flex-col p-3">
         <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-surface-100 group-hover:text-white">
           {video.title}

@@ -1,5 +1,10 @@
-import type { LandingHero, ContentRow, HomepageElement } from "@/types";
+import type { LandingHero, ContentRow, HomepageElement, Category } from "@/types";
 import { api } from "./client";
+
+export async function listAllCategories(): Promise<Category[]> {
+  const { data } = await api.get("/categories");
+  return data.data ?? data;
+}
 
 export async function getLandingHeroes(): Promise<LandingHero[]> {
   const { data } = await api.get("/landing-heroes", { params: { active: true } });

@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { Link } from "react-router-dom";
+import axios from "axios";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -218,6 +219,15 @@ export default function AdminChannelsPage() {
       )}
     </div>
   );
+}
+
+function createChannelErrorMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const body = err.response?.data as { message?: string } | undefined;
+    return body?.message ?? err.message ?? "Failed to create channel";
+  }
+  if (err instanceof Error) return err.message;
+  return "Failed to create channel";
 }
 
 function CreateChannelDialog({ onClose }: { onClose: () => void }) {
@@ -440,6 +450,11 @@ function CreateChannelDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             </div>
+            {createMutation.isError && (
+              <p className="text-sm text-destructive" role="alert">
+                {createChannelErrorMessage(createMutation.error)}
+              </p>
+            )}
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="ghost" onClick={onClose}>
                 Cancel
