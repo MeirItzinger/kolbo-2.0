@@ -46,6 +46,7 @@ router.post(
     }
 
     const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+    /** Public Blob store (recommended): leave BLOB_ACCESS unset → "public". */
     const blobAccessEnv = process.env.BLOB_ACCESS?.trim().toLowerCase();
     const blobAccess: "public" | "private" =
       blobAccessEnv === "private" ? "private" : "public";
