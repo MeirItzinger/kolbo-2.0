@@ -99,7 +99,17 @@ async function fulfillSubscription(
   const existing = await prisma.userSubscription.findFirst({
     where: { stripeSubscriptionId },
   });
-  if (existing) return;
+  if (existing) {
+    // subscription.created may have inserted this row first without priceVariantId;
+    // backfill so WITH_ADS tier and preroll adMode resolve correctly.
+    if (variantId && !existing.priceVariantId) {
+      await prisma.userSubscription.update({
+        where: { id: existing.id },
+        data: { priceVariantId: variantId },
+      });
+    }
+    return;
+  }
 
   await prisma.userSubscription.create({
     data: {
@@ -288,6 +298,7 @@ async function handleSubscriptionCreated(
   const status = mapStripeStatusToPrisma(subscription.status);
 
   if (meta.type === "subscription" && meta.userId && meta.planId && meta.channelId) {
+    const variantId = meta.variantId ?? null;
     await prisma.userSubscription.upsert({
       where: { userId_subscriptionPlanId: { userId: meta.userId, subscriptionPlanId: meta.planId } },
       update: {
@@ -295,11 +306,13 @@ async function handleSubscriptionCreated(
         status,
         currentPeriodStart: new Date(subscription.current_period_start * 1000),
         currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+        ...(variantId ? { priceVariantId: variantId } : {}),
       },
       create: {
         userId: meta.userId,
         channelId: meta.channelId,
         subscriptionPlanId: meta.planId,
+        priceVariantId: variantId,
         stripeSubscriptionId: subscription.id,
         status,
         currentPeriodStart: new Date(subscription.current_period_start * 1000),
@@ -345,7 +358,19 @@ async function handleSubscriptionUpdated(
     data,
   });
 
-  if (updatedCount.count > 0) return;
+  if (updatedCount.count > 0) {
+    const v = subscription.metadata?.variantId;
+    if (v) {
+      await prisma.userSubscription.updateMany({
+        where: {
+          stripeSubscriptionId: subscription.id,
+          priceVariantId: null,
+        },
+        data: { priceVariantId: v },
+      });
+    }
+    return;
+  }
 
   const bundleSub = await prisma.userBundleSubscription.findUnique({
     where: { stripeSubscriptionId: subscription.id },
