@@ -19,7 +19,9 @@ api.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<string> | null = null;
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api$/, "");
+const API_ORIGIN = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/api$/, "")
+  : "";
 
 function resolveUploads(value: unknown): unknown {
   if (typeof value === "string") {
