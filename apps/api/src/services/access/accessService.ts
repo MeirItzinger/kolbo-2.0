@@ -44,6 +44,19 @@ function resolveAdMode(
   return "full_ads";
 }
 
+/** Ad tier and concurrency live on PlanPriceVariant, not SubscriptionPlan. */
+function subscriptionVariantFields(sub: {
+  priceVariant: { adTier: AdTier; concurrencyTier: ConcurrencyTier } | null;
+}): { adTier: AdTier; concurrencyTier: ConcurrencyTier } {
+  if (sub.priceVariant) {
+    return {
+      adTier: sub.priceVariant.adTier,
+      concurrencyTier: sub.priceVariant.concurrencyTier,
+    };
+  }
+  return { adTier: "WITHOUT_ADS", concurrencyTier: "STREAMS_3" };
+}
+
 export async function checkAccess(
   userId: string | null,
   videoId: string
@@ -134,17 +147,19 @@ export async function checkAccess(
         subscriptionPlanId: { in: planIds },
         status: { in: ["ACTIVE", "TRIALING"] },
       },
-      include: { subscriptionPlan: true },
+      include: { subscriptionPlan: true, priceVariant: true },
     });
 
     if (activeSub) {
       const plan = activeSub.subscriptionPlan;
+      const { adTier, concurrencyTier } =
+        subscriptionVariantFields(activeSub);
       return {
         allowed: true,
         reason: `Subscription: ${plan.name}`,
         accessType: "SUBSCRIPTION",
-        adMode: resolveAdMode(video, plan.adTier),
-        maxConcurrentStreams: concurrencyTierToMax(plan.concurrencyTier),
+        adMode: resolveAdMode(video, adTier),
+        maxConcurrentStreams: concurrencyTierToMax(concurrencyTier),
         ...baseResult,
       };
     }
@@ -193,17 +208,19 @@ export async function checkAccess(
         channelId: video.channelId,
         status: { in: ["ACTIVE", "TRIALING"] },
       },
-      include: { subscriptionPlan: true },
+      include: { subscriptionPlan: true, priceVariant: true },
     });
 
     if (channelSub) {
       const plan = channelSub.subscriptionPlan;
+      const { adTier, concurrencyTier } =
+        subscriptionVariantFields(channelSub);
       return {
         allowed: true,
         reason: `Channel subscription: ${plan.name}`,
         accessType: "SUBSCRIPTION",
-        adMode: resolveAdMode(video, plan.adTier),
-        maxConcurrentStreams: concurrencyTierToMax(plan.concurrencyTier),
+        adMode: resolveAdMode(video, adTier),
+        maxConcurrentStreams: concurrencyTierToMax(concurrencyTier),
         ...baseResult,
       };
     }

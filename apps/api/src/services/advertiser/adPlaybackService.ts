@@ -6,14 +6,19 @@ import { ApiError } from "../../utils/apiError";
 const SETTINGS_ID = "singleton";
 const USD_MIN_CHARGE_CENTS = 50;
 
+/**
+ * Pick a preroll creative for this video. Caller must ensure playback access
+ * allows a preroll (e.g. adMode is preroll, preroll_midroll, or full_ads).
+ * Campaigns with no channel targets run on all channels; otherwise the video's
+ * channel must be in the campaign's channelTargets.
+ */
 export async function findPrerollCreativeForVideo(videoId: string) {
   const video = await prisma.video.findUnique({
     where: { id: videoId },
-    select: { id: true, freeWithAds: true, hasPrerollAds: true },
+    select: { id: true, channelId: true },
   });
 
   if (!video) return null;
-  if (!video.freeWithAds && !video.hasPrerollAds) return null;
 
   const eligible = await prisma.adCreative.findMany({
     where: {
@@ -32,6 +37,12 @@ export async function findPrerollCreativeForVideo(videoId: string) {
             OR: [
               { endDate: null },
               { endDate: { gte: new Date() } },
+            ],
+          },
+          {
+            OR: [
+              { channelTargets: { none: {} } },
+              { channelTargets: { some: { channelId: video.channelId } } },
             ],
           },
         ],

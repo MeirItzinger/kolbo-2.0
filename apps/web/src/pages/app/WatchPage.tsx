@@ -37,7 +37,12 @@ async function getPlaybackToken(videoId: string): Promise<PlaybackData> {
 }
 
 async function getPrerollAd(videoId: string): Promise<AdData | null> {
-  const { data } = await axios.get(`${API_BASE}/playback/ad/${videoId}`);
+  const token = localStorage.getItem("kolbo_access_token");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const { data } = await axios.get(`${API_BASE}/playback/ad/${videoId}`, {
+    headers,
+  });
   return data?.data ?? null;
 }
 

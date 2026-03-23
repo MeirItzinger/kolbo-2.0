@@ -99,6 +99,8 @@ export const getPlaybackToken = asyncHandler(
   }
 );
 
+const PREROLL_AD_MODES = new Set(["preroll", "preroll_midroll", "full_ads"]);
+
 export const getPrerollAd = asyncHandler(
   async (req: Request, res: Response) => {
     const { videoId } = req.params;
@@ -108,6 +110,17 @@ export const getPrerollAd = asyncHandler(
       select: { id: true },
     });
     if (!video) throw ApiError.notFound("Video not found");
+
+    const userId = req.user?.id ?? null;
+    const accessResult = await checkAccess(userId, videoId);
+
+    if (!accessResult.allowed) {
+      throw ApiError.forbidden(accessResult.reason);
+    }
+
+    if (!PREROLL_AD_MODES.has(accessResult.adMode)) {
+      return res.json({ status: "success", data: null });
+    }
 
     const creative = await findPrerollCreativeForVideo(videoId);
 

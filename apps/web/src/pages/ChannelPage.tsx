@@ -716,8 +716,12 @@ async function fetchPlaybackTokenForModal(videoId: string) {
 }
 
 async function fetchPrerollAdForModal(videoId: string) {
+  const token = localStorage.getItem("kolbo_access_token");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
   const { data } = await axios.get(
     `${PLAYBACK_API_BASE}/playback/ad/${videoId}`,
+    { headers },
   );
   return data?.data ?? null;
 }
