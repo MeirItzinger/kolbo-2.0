@@ -20,6 +20,7 @@ import {
   getAdUploadUrl,
   deleteAdCreative,
   updateAdCreative,
+  deleteCampaign,
 } from "@/api/advertiser";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -236,6 +237,14 @@ export default function CampaignDetailPage() {
     },
   });
 
+  const deleteCampaignMutation = useMutation({
+    mutationFn: () => deleteCampaign(id!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["advertiser", "campaigns"] });
+      navigate("/advertise/dashboard");
+    },
+  });
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !id) return;
@@ -272,9 +281,23 @@ export default function CampaignDetailPage() {
   }
 
   const canEdit = ["DRAFT", "REJECTED"].includes(campaign.status);
+  const canDeleteCampaign = ["DRAFT", "REJECTED", "PENDING_REVIEW"].includes(
+    campaign.status
+  );
   const readyCreatives =
     campaign.creatives?.filter((c) => c.assetStatus === "READY") ?? [];
   const canSubmit = canEdit && readyCreatives.length > 0;
+
+  const handleDeleteCampaign = () => {
+    if (
+      !confirm(
+        "Delete this campaign permanently? This cannot be undone. Video ads and targeting will be removed."
+      )
+    ) {
+      return;
+    }
+    deleteCampaignMutation.mutate();
+  };
 
   return (
     <div className="space-y-6">
@@ -293,7 +316,15 @@ export default function CampaignDetailPage() {
             {campaign.status.replace(/_/g, " ")}
           </Badge>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {canEdit && (
+            <Button variant="outline" asChild>
+              <Link to={`/advertise/campaigns/${campaign.id}/edit`}>
+                <Pencil className="mr-1 h-4 w-4" />
+                Edit campaign
+              </Link>
+            </Button>
+          )}
           {canEdit && (
             <Button
               variant="outline"
@@ -306,6 +337,23 @@ export default function CampaignDetailPage() {
                 <>
                   <Upload className="h-4 w-4" />
                   Upload Video Ad
+                </>
+              )}
+            </Button>
+          )}
+          {canDeleteCampaign && (
+            <Button
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              disabled={deleteCampaignMutation.isPending}
+              onClick={handleDeleteCampaign}
+            >
+              {deleteCampaignMutation.isPending ? (
+                <Spinner size="sm" />
+              ) : (
+                <>
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Delete campaign
                 </>
               )}
             </Button>

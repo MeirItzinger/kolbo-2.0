@@ -169,6 +169,10 @@ export async function updateCampaign(
   return unwrap(data);
 }
 
+export async function deleteCampaign(id: string): Promise<void> {
+  await advApi.delete(`/advertiser/campaigns/${id}`);
+}
+
 export async function submitCampaign(id: string): Promise<AdCampaign> {
   const { data } = await advApi.post(`/advertiser/campaigns/${id}/submit`);
   return unwrap(data);

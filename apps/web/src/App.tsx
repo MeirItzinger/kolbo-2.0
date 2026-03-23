@@ -317,6 +317,10 @@ export function App() {
                     element={<CampaignCreatePage />}
                   />
                   <Route
+                    path="advertise/campaigns/:id/edit"
+                    element={<CampaignCreatePage />}
+                  />
+                  <Route
                     path="advertise/campaigns/:id"
                     element={<CampaignDetailPage />}
                   />

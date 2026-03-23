@@ -38,6 +38,11 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
   res.json({ status: "success", data: campaign });
 });
 
+export const destroy = asyncHandler(async (req: Request, res: Response) => {
+  await campaignService.deleteCampaign(req.params.id, req.advertiser!.id);
+  res.json({ status: "success", data: { deleted: true } });
+});
+
 export const submit = asyncHandler(async (req: Request, res: Response) => {
   const campaign = await campaignService.submitForReview(
     req.params.id,

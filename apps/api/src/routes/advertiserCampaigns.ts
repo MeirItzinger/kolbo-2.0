@@ -11,6 +11,7 @@ router.get("/", ctrl.list);
 router.post("/", ctrl.create);
 router.delete("/:id/creatives/:creativeId", ctrl.deleteCreative);
 router.patch("/:id/creatives/:creativeId", ctrl.patchCreative);
+router.delete("/:id", ctrl.destroy);
 router.get("/:id", ctrl.get);
 router.patch("/:id", ctrl.update);
 router.post("/:id/submit", ctrl.submit);

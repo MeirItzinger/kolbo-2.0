@@ -248,6 +248,32 @@ export async function getCampaign(campaignId: string, advertiserId: string) {
   return campaign;
 }
 
+const ADVERTISER_DELETABLE_STATUSES = new Set([
+  "DRAFT",
+  "REJECTED",
+  "PENDING_REVIEW",
+]);
+
+export async function deleteCampaign(
+  campaignId: string,
+  advertiserId: string
+) {
+  const campaign = await prisma.adCampaign.findUnique({
+    where: { id: campaignId },
+  });
+
+  if (!campaign) throw ApiError.notFound("Campaign not found");
+  if (campaign.advertiserId !== advertiserId)
+    throw ApiError.forbidden("Not your campaign");
+  if (!ADVERTISER_DELETABLE_STATUSES.has(campaign.status)) {
+    throw ApiError.badRequest(
+      "Only draft, rejected, or pending-review campaigns can be deleted"
+    );
+  }
+
+  await prisma.adCampaign.delete({ where: { id: campaignId } });
+}
+
 export async function submitForReview(
   campaignId: string,
   advertiserId: string

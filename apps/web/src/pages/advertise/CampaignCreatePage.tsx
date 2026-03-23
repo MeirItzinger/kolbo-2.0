@@ -1,11 +1,16 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useMatch, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, Tv } from "lucide-react";
-import { createCampaign, getAdEligibleChannels } from "@/api/advertiser";
+import {
+  createCampaign,
+  getAdEligibleChannels,
+  getCampaign,
+  updateCampaign,
+} from "@/api/advertiser";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -38,11 +43,21 @@ interface GeoTarget {
 export default function CampaignCreatePage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const matchEdit = useMatch("/advertise/campaigns/:id/edit");
+  const editCampaignId = matchEdit?.params.id;
+  const isEdit = !!editCampaignId;
+
   const [geoTargets, setGeoTargets] = useState<GeoTarget[]>([]);
   const [geoType, setGeoType] = useState<"CITY" | "ZIP_CODE">("CITY");
   const [geoValue, setGeoValue] = useState("");
   const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [billingReady, setBillingReady] = useState(false);
+
+  const campaignQuery = useQuery({
+    queryKey: ["advertiser", "campaigns", editCampaignId],
+    queryFn: () => getCampaign(editCampaignId!),
+    enabled: !!editCampaignId,
+  });
 
   const channelsQuery = useQuery({
     queryKey: ["advertiser", "ad-eligible-channels"],
@@ -54,15 +69,70 @@ export default function CampaignCreatePage() {
     register,
     handleSubmit,
     formState: { errors },
+    reset,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: {
+      name: "",
+      totalBudget: 0,
+      dailyMaxSpend: 0,
+      targetAgeMin: "",
+      targetAgeMax: "",
+      startDate: "",
+      endDate: "",
+    },
   });
+
+  const campaign = campaignQuery.data;
+  const canEditThisCampaign =
+    campaign &&
+    (campaign.status === "DRAFT" || campaign.status === "REJECTED");
+
+  useEffect(() => {
+    if (!isEdit || !campaign) return;
+    reset({
+      name: campaign.name,
+      totalBudget: Number(campaign.totalBudget),
+      dailyMaxSpend: Number(campaign.dailyMaxSpend),
+      targetAgeMin: campaign.targetAgeMin ?? "",
+      targetAgeMax: campaign.targetAgeMax ?? "",
+      startDate: campaign.startDate
+        ? campaign.startDate.slice(0, 10)
+        : "",
+      endDate: campaign.endDate ? campaign.endDate.slice(0, 10) : "",
+    });
+    setGeoTargets(
+      (campaign.geoTargets ?? []).map((g) => ({
+        type: g.type,
+        value: g.value,
+      }))
+    );
+    setSelectedChannelIds(
+      (campaign.channelTargets ?? []).map((ct) => ct.channelId)
+    );
+  }, [isEdit, campaign, reset]);
+
+  useEffect(() => {
+    if (isEdit) setBillingReady(true);
+  }, [isEdit]);
 
   const createMutation = useMutation({
     mutationFn: createCampaign,
-    onSuccess: (campaign) => {
+    onSuccess: (c) => {
       qc.invalidateQueries({ queryKey: ["advertiser", "campaigns"] });
-      navigate(`/advertise/campaigns/${campaign.id}`);
+      navigate(`/advertise/campaigns/${c.id}`);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      updateCampaign(editCampaignId!, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["advertiser", "campaigns"] });
+      qc.invalidateQueries({
+        queryKey: ["advertiser", "campaigns", editCampaignId],
+      });
+      navigate(`/advertise/campaigns/${editCampaignId}`);
     },
   });
 
@@ -78,7 +148,7 @@ export default function CampaignCreatePage() {
   };
 
   const onSubmit = (data: FormData) => {
-    createMutation.mutate({
+    const base = {
       name: data.name,
       totalBudget: data.totalBudget,
       dailyMaxSpend: data.dailyMaxSpend,
@@ -88,17 +158,68 @@ export default function CampaignCreatePage() {
         typeof data.targetAgeMax === "number" ? data.targetAgeMax : undefined,
       startDate: data.startDate || undefined,
       endDate: data.endDate || undefined,
+    };
+    if (isEdit) {
+      updateMutation.mutate({
+        ...base,
+        geoTargets,
+        channelIds: selectedChannelIds,
+      });
+      return;
+    }
+    createMutation.mutate({
+      ...base,
       geoTargets: geoTargets.length > 0 ? geoTargets : undefined,
-      channelIds: selectedChannelIds.length > 0 ? selectedChannelIds : undefined,
+      channelIds:
+        selectedChannelIds.length > 0 ? selectedChannelIds : undefined,
     });
   };
 
   const selectClass =
     "flex h-10 w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+  if (isEdit && campaignQuery.isLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (isEdit && campaignQuery.isError) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4 text-center">
+        <p className="text-destructive">Could not load campaign.</p>
+        <Button type="button" variant="outline" onClick={() => navigate("/advertise/dashboard")}>
+          Back to dashboard
+        </Button>
+      </div>
+    );
+  }
+
+  if (isEdit && campaign && !canEditThisCampaign) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4">
+        <h1 className="text-2xl font-bold text-white">Cannot edit campaign</h1>
+        <p className="text-surface-400">
+          Only draft or rejected campaigns can be edited. This campaign is{" "}
+          <span className="text-white">{campaign.status.replace(/_/g, " ")}</span>.
+        </p>
+        <Button asChild variant="outline">
+          <Link to={`/advertise/campaigns/${campaign.id}`}>View campaign</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const saving = isEdit ? updateMutation.isPending : createMutation.isPending;
+  const mutationError = isEdit ? updateMutation.error : createMutation.error;
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-bold text-white">Create Campaign</h1>
+      <h1 className="text-2xl font-bold text-white">
+        {isEdit ? "Edit campaign" : "Create Campaign"}
+      </h1>
 
       {/* Billing uses Stripe Elements and must NOT be nested inside this form (invalid HTML). */}
       <form
@@ -350,7 +471,7 @@ export default function CampaignCreatePage() {
         </Card>
       </form>
 
-      <CampaignBillingSection onReadyChange={setBillingReady} />
+      {!isEdit && <CampaignBillingSection onReadyChange={setBillingReady} />}
 
       {/* Note about video upload (outside campaign form — no inputs) */}
       <Card>
@@ -359,9 +480,9 @@ export default function CampaignCreatePage() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-surface-400">
-            You can upload your video ad after creating the campaign. Once
-            created, you'll be taken to the campaign page where you can upload
-            your creative and submit for review.
+            {isEdit
+              ? "Upload, replace, or remove video ads from the campaign detail page."
+              : "You can upload your video ad after creating the campaign. Once created, you'll be taken to the campaign page where you can upload your creative and submit for review."}
           </p>
         </CardContent>
       </Card>
@@ -377,20 +498,22 @@ export default function CampaignCreatePage() {
         <Button
           type="submit"
           form="campaign-create-form"
-          disabled={createMutation.isPending || !billingReady}
+          disabled={saving || (!isEdit && !billingReady)}
         >
-          {createMutation.isPending ? (
+          {saving ? (
             <Spinner size="sm" />
+          ) : isEdit ? (
+            "Save changes"
           ) : (
             "Create Campaign"
           )}
         </Button>
       </div>
 
-      {createMutation.isError && (
+      {mutationError && (
         <p className="text-sm text-destructive">
-          {(createMutation.error as any)?.response?.data?.message ??
-            "Failed to create campaign"}
+          {(mutationError as any)?.response?.data?.message ??
+            (isEdit ? "Failed to update campaign" : "Failed to create campaign")}
         </p>
       )}
     </div>
