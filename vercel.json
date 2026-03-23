@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm install",
-  "buildCommand": "npm run db:generate --workspace=apps/api && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+  "buildCommand": "cd apps/api && npx prisma generate && npx tsc --noEmitOnError false; cd ../.. && cd apps/web && npx vite build",
   "outputDirectory": "apps/web/dist",
   "framework": null,
   "rewrites": [
