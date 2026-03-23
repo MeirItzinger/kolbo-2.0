@@ -19,7 +19,7 @@ import { VideoPlayer } from "@/features/player/VideoPlayer";
 import { PrerollAd } from "@/features/player/PrerollAd";
 import { getChannel, getChannelPageElements, getChannelCategories } from "@/api/channels";
 import { listVideos, getVideo } from "@/api/videos";
-import { api } from "@/api/client";
+import { api, resolveUploadedAssetUrl } from "@/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -259,7 +259,7 @@ export default function ChannelPage() {
       <div className="relative h-48 sm:h-64 lg:h-80">
         {channel.bannerUrl ? (
           <img
-            src={channel.bannerUrl}
+            src={resolveUploadedAssetUrl(channel.bannerUrl)}
             alt={channel.name}
             className="h-full w-full object-cover"
           />
@@ -274,7 +274,7 @@ export default function ChannelPage() {
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:gap-6">
           {channel.logoUrl ? (
             <img
-              src={channel.logoUrl}
+              src={resolveUploadedAssetUrl(channel.logoUrl)}
               alt={channel.name}
               className="h-24 w-24 rounded-2xl border-4 border-surface-950 object-cover shadow-xl sm:h-32 sm:w-32"
             />

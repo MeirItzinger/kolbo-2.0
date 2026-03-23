@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, Save } from "lucide-react";
-import { adminGetChannel, adminUpdateChannel } from "@/api/admin";
+import { ChevronLeft, Save, Upload, X } from "lucide-react";
+import { adminGetChannel, adminUpdateChannel, uploadImage } from "@/api/admin";
+import { resolveUploadedAssetUrl } from "@/api/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
@@ -29,6 +30,7 @@ const schema = z.object({
   name: z.string().min(1, "Name is required"),
   slug: z.string().min(1, "Slug is required"),
   description: z.string().optional(),
+  logoUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   isActive: z.boolean(),
 });
 
@@ -38,6 +40,9 @@ export default function AdminChannelEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const logoFileRef = useRef<HTMLInputElement>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoUploadError, setLogoUploadError] = useState("");
 
   const channelQuery = useQuery({
     queryKey: ["admin", "channel", id],
@@ -58,6 +63,8 @@ export default function AdminChannelEditPage() {
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -66,15 +73,42 @@ export default function AdminChannelEditPage() {
           name: channel.name,
           slug: channel.slug,
           description: channel.description ?? "",
+          logoUrl: channel.logoUrl
+            ? resolveUploadedAssetUrl(channel.logoUrl)
+            : "",
           isActive: channel.isActive,
         }
       : undefined,
   });
 
+  const logoUrl = watch("logoUrl");
+
+  const onLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoUploadError("");
+    setLogoUploading(true);
+    try {
+      const { url } = await uploadImage(file);
+      setValue("logoUrl", resolveUploadedAssetUrl(url), { shouldValidate: true });
+    } catch (err: unknown) {
+      setLogoUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setLogoUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const clearLogo = () => {
+    setValue("logoUrl", "", { shouldValidate: true });
+    if (logoFileRef.current) logoFileRef.current.value = "";
+  };
+
   const updateMutation = useMutation({
     mutationFn: (data: FormData) =>
       adminUpdateChannel(id!, {
         ...data,
+        logoUrl: data.logoUrl?.trim() ? data.logoUrl.trim() : null,
         allowedAccessTypes: selectedAccessTypes,
       } as any),
     onSuccess: () => {
@@ -160,6 +194,80 @@ export default function AdminChannelEditPage() {
                 rows={4}
                 className="flex w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-surface-50 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-surface-300">
+                Channel image
+              </label>
+              <p className="mb-2 text-xs text-surface-500">
+                Shown on the public channel page next to the title and Subscribe
+                button.
+              </p>
+              <input
+                ref={logoFileRef}
+                type="file"
+                accept="image/*"
+                onChange={onLogoFile}
+                className="hidden"
+              />
+              <input type="hidden" {...register("logoUrl")} />
+              {errors.logoUrl && (
+                <p className="mb-1 text-xs text-destructive">
+                  {errors.logoUrl.message}
+                </p>
+              )}
+              {logoUrl ? (
+                <div className="relative mt-1 inline-block">
+                  <img
+                    src={logoUrl}
+                    alt="Channel preview"
+                    className="h-28 w-28 rounded-2xl border border-surface-700 object-cover"
+                  />
+                  {logoUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/50">
+                      <Spinner size="sm" />
+                    </div>
+                  )}
+                  {!logoUploading && (
+                    <button
+                      type="button"
+                      onClick={clearLogo}
+                      className="absolute -right-2 -top-2 rounded-full bg-surface-800 p-1 text-surface-200 ring-1 ring-surface-600 hover:bg-surface-700"
+                      aria-label="Remove image"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => logoFileRef.current?.click()}
+                  disabled={logoUploading}
+                  className="mt-1 flex w-full max-w-sm items-center justify-center gap-2 rounded-lg border-2 border-dashed border-surface-700 bg-surface-900/50 px-4 py-8 text-sm text-surface-400 transition-colors hover:border-primary-500/50 hover:text-surface-300 disabled:opacity-50"
+                >
+                  {logoUploading ? (
+                    <Spinner size="sm" />
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5" />
+                      Click to upload channel image
+                    </>
+                  )}
+                </button>
+              )}
+              {logoUrl && !logoUploading && (
+                <button
+                  type="button"
+                  onClick={() => logoFileRef.current?.click()}
+                  className="mt-2 text-xs text-primary-400 hover:underline"
+                >
+                  Replace image
+                </button>
+              )}
+              {logoUploadError && (
+                <p className="mt-1 text-xs text-destructive">{logoUploadError}</p>
+              )}
             </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-surface-300">
