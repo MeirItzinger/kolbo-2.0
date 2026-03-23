@@ -332,6 +332,13 @@ export async function adminReorderChannelPageElements(channelId: string, ids: st
   await api.post(`/channels/${channelId}/page-elements/reorder`, { ids });
 }
 
+export async function adminReorderChannelPageUnified(
+  channelId: string,
+  items: { kind: "element" | "category"; id: string }[],
+): Promise<void> {
+  await api.post(`/channels/${channelId}/page-elements/reorder`, { items });
+}
+
 // ── Categories ────────────────────────────────────────────────────
 
 export async function adminListCategories(channelId: string): Promise<Category[]> {

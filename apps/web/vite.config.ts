@@ -18,6 +18,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    /** Listen on all interfaces so 127.0.0.1 / LAN work; helps some IDE browsers and IPv6 quirks. */
+    host: true,
     proxy: {
       '/api': {
         target: 'http://localhost:4000',

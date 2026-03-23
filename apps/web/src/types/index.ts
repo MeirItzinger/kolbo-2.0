@@ -128,6 +128,10 @@ export interface Video {
   videoAccessRules?: VideoAccessRule[];
   rentalOptions?: RentalOption[];
   purchaseOptions?: PurchaseOption[];
+  thumbnailUrl?: string | null;
+  duration?: number | null;
+  rentalOption?: RentalOption;
+  purchaseOption?: PurchaseOption;
   createdAt: string;
   updatedAt: string;
 }

@@ -41,10 +41,12 @@ import {
   adminCreateChannelPageElement,
   adminUpdateChannelPageElement,
   adminDeleteChannelPageElement,
-  adminReorderChannelPageElements,
+  adminReorderChannelPageUnified,
   adminListVideos,
+  adminListCategories,
   uploadImage,
 } from "@/api/admin";
+import { resolveUploadedAssetUrl } from "@/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -56,7 +58,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/Card";
-import type { HomepageElement, HomepageElementType, Video } from "@/types";
+import { LayoutGrid } from "lucide-react";
+import type { HomepageElement, HomepageElementType, Video, Category } from "@/types";
 
 type ChannelElementType = Exclude<HomepageElementType, "CHANNEL_ROW">;
 
@@ -92,6 +95,10 @@ export default function ChannelPageBuilderPage() {
   return <ChannelPageBuilderInner channelId={channelId} />;
 }
 
+type UnifiedItem =
+  | { kind: "element"; id: string; sortOrder: number; data: HomepageElement }
+  | { kind: "category"; id: string; sortOrder: number; data: Category };
+
 function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
   const qc = useQueryClient();
   const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
@@ -105,12 +112,38 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
     queryFn: () => adminListChannelPageElements(channelId),
   });
 
+  const categoriesQuery = useQuery({
+    queryKey: ["admin", "categories", channelId],
+    queryFn: () => adminListCategories(channelId),
+  });
+
   const elements: HomepageElement[] = (() => {
     const d = elementsQuery.data;
     if (Array.isArray(d)) return d;
     if (d && typeof d === "object" && "data" in d) return (d as any).data ?? [];
     return [];
   })();
+
+  const categories: Category[] = (() => {
+    const d = categoriesQuery.data;
+    if (Array.isArray(d)) return d.filter((c) => c.isActive);
+    return [];
+  })();
+
+  const unifiedItems: UnifiedItem[] = [
+    ...elements.map((el): UnifiedItem => ({
+      kind: "element",
+      id: el.id,
+      sortOrder: el.sortOrder ?? 0,
+      data: el,
+    })),
+    ...categories.map((cat): UnifiedItem => ({
+      kind: "category",
+      id: cat.id,
+      sortOrder: cat.sortOrder ?? 0,
+      data: cat,
+    })),
+  ].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => adminDeleteChannelPageElement(channelId, id),
@@ -121,9 +154,11 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
   });
 
   const reorderMutation = useMutation({
-    mutationFn: (ids: string[]) => adminReorderChannelPageElements(channelId, ids),
+    mutationFn: (items: { kind: "element" | "category"; id: string }[]) =>
+      adminReorderChannelPageUnified(channelId, items),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "channel-page-elements", channelId] });
+      qc.invalidateQueries({ queryKey: ["admin", "categories", channelId] });
     },
   });
 
@@ -135,11 +170,13 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = elements.findIndex((e) => e.id === active.id);
-    const newIndex = elements.findIndex((e) => e.id === over.id);
+    const oldIndex = unifiedItems.findIndex((e) => e.id === active.id);
+    const newIndex = unifiedItems.findIndex((e) => e.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(elements, oldIndex, newIndex);
-    reorderMutation.mutate(reordered.map((e) => e.id));
+    const reordered = arrayMove(unifiedItems, oldIndex, newIndex);
+    reorderMutation.mutate(
+      reordered.map((item) => ({ kind: item.kind, id: item.id })),
+    );
   };
 
   const handleCreate = (type: ChannelElementType) => {
@@ -153,20 +190,29 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
     }
   };
 
+  const isLoading = elementsQuery.isLoading || categoriesQuery.isLoading;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-5xl space-y-8 pb-10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Channel Page Builder</h1>
-          <p className="mt-1 text-sm text-surface-400">
-            Arrange and configure elements that appear on your channel page
+          <h1 className="text-3xl font-bold tracking-tight text-white">
+            Channel Page Builder
+          </h1>
+          <p className="mt-2 max-w-xl text-base leading-relaxed text-surface-400">
+            Drag blocks to set order on your public channel page. Previews below
+            are larger so you can see what viewers will get.
           </p>
         </div>
-        <div className="relative">
-          <Button onClick={() => setCreateDropdownOpen(!createDropdownOpen)}>
-            <Plus className="h-4 w-4" />
-            Create
-            <ChevronDown className="ml-1 h-3 w-3" />
+        <div className="relative shrink-0">
+          <Button
+            size="lg"
+            className="px-6"
+            onClick={() => setCreateDropdownOpen(!createDropdownOpen)}
+          >
+            <Plus className="h-5 w-5" />
+            Create block
+            <ChevronDown className="ml-1 h-4 w-4" />
           </Button>
           {createDropdownOpen && (
             <>
@@ -174,7 +220,7 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
                 className="fixed inset-0 z-40"
                 onClick={() => setCreateDropdownOpen(false)}
               />
-              <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-surface-700 bg-surface-900 py-1 shadow-xl">
+              <div className="absolute right-0 z-50 mt-2 w-64 rounded-xl border border-surface-600 bg-surface-900 py-2 shadow-2xl ring-1 ring-black/40">
                 {(["CONTENT_ROW", "HERO", "TEXT_DIVIDER", "LINE_DIVIDER"] as ChannelElementType[]).map((type) => {
                   const Icon = ELEMENT_ICONS[type];
                   return (
@@ -182,9 +228,11 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
                       key={type}
                       type="button"
                       onClick={() => handleCreate(type)}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-base text-surface-200 transition-colors hover:bg-surface-800 hover:text-white"
                     >
-                      <Icon className="h-4 w-4 text-surface-500" />
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-800">
+                        <Icon className="h-5 w-5 text-primary-400" />
+                      </span>
                       {ELEMENT_LABELS[type]}
                     </button>
                   );
@@ -195,19 +243,23 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
         </div>
       </div>
 
-      {elementsQuery.isLoading ? (
+      {isLoading ? (
         <div className="flex justify-center py-12">
           <Spinner size="lg" />
         </div>
-      ) : elements.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <Rows3 className="mx-auto mb-4 h-12 w-12 text-surface-600" />
-            <p className="text-lg font-medium text-white">
+      ) : unifiedItems.length === 0 ? (
+        <Card className="overflow-hidden rounded-2xl border-surface-700 bg-surface-900/50">
+          <CardContent className="py-20 text-center">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-surface-800 ring-1 ring-surface-700">
+              <Rows3 className="h-10 w-10 text-primary-400/80" />
+            </div>
+            <p className="text-xl font-semibold text-white">
               Your channel page is empty
             </p>
-            <p className="mt-1 text-sm text-surface-400">
-              Click &quot;Create&quot; to add your first element
+            <p className="mx-auto mt-2 max-w-sm text-base text-surface-400">
+              Use <span className="text-surface-200">Create block</span> to add
+              heroes, rows, and dividers. Category rows from your library appear
+              here automatically.
             </p>
           </CardContent>
         </Card>
@@ -218,24 +270,32 @@ function ChannelPageBuilderInner({ channelId }: { channelId: string }) {
           onDragEnd={handleDragEnd}
         >
           <SortableContext
-            items={elements.map((e) => e.id)}
+            items={unifiedItems.map((e) => e.id)}
             strategy={verticalListSortingStrategy}
           >
-            <div className="space-y-0">
-              {elements.map((el) => (
-                <SortableElementPreview
-                  key={el.id}
-                  element={el}
-                  onEdit={() => {
-                    if (el.type === "CONTENT_ROW") {
-                      setManagingVideos(el);
-                    } else {
-                      setEditingElement(el);
-                    }
-                  }}
-                  onDelete={() => setDeleteTarget(el)}
-                />
-              ))}
+            <div className="space-y-4">
+              {unifiedItems.map((item) =>
+                item.kind === "category" ? (
+                  <SortableCategoryPreview
+                    key={item.id}
+                    category={item.data as Category}
+                  />
+                ) : (
+                  <SortableElementPreview
+                    key={item.id}
+                    element={item.data as HomepageElement}
+                    onEdit={() => {
+                      const el = item.data as HomepageElement;
+                      if (el.type === "CONTENT_ROW") {
+                        setManagingVideos(el);
+                      } else {
+                        setEditingElement(el);
+                      }
+                    }}
+                    onDelete={() => setDeleteTarget(item.data as HomepageElement)}
+                  />
+                ),
+              )}
             </div>
           </SortableContext>
         </DndContext>
@@ -366,42 +426,137 @@ function SortableElementPreview({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group ${isDragging ? "opacity-90 shadow-2xl shadow-primary-900/30 ring-2 ring-primary-500/40 rounded-lg" : ""}`}
+      className={`group overflow-hidden rounded-2xl border border-surface-600/80 bg-surface-900/60 shadow-lg shadow-black/25 ring-1 ring-white/5 transition-shadow hover:ring-white/10 ${
+        isDragging
+          ? "scale-[1.01] opacity-95 shadow-2xl shadow-primary-900/40 ring-2 ring-primary-500/50"
+          : ""
+      }`}
     >
-      <div className="flex items-center gap-2 border border-surface-800 bg-surface-900/80 px-3 py-2 first:rounded-t-lg">
+      <div className="flex flex-wrap items-center gap-3 border-b border-surface-700/80 bg-surface-800/40 px-4 py-3.5 sm:px-5">
         <button
           type="button"
-          className="cursor-grab touch-none rounded p-1 text-surface-500 transition-colors hover:bg-surface-800 hover:text-white active:cursor-grabbing"
+          className="cursor-grab touch-none rounded-lg bg-surface-800 p-2.5 text-surface-400 transition-colors hover:bg-surface-700 hover:text-white active:cursor-grabbing"
+          aria-label="Drag to reorder"
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="h-4 w-4" />
+          <GripVertical className="h-5 w-5" />
         </button>
-        <Icon className="h-4 w-4 text-surface-500" />
-        <span className="text-xs font-medium text-surface-400">
-          {ELEMENT_LABELS[element.type as ChannelElementType] ?? element.type}
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-800 ring-1 ring-surface-600/60">
+          <Icon className="h-5 w-5 text-primary-400" />
         </span>
-        {element.title && (
-          <span className="text-xs text-surface-500">— {element.title}</span>
-        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold uppercase tracking-wide text-surface-500">
+            {ELEMENT_LABELS[element.type as ChannelElementType] ?? element.type}
+          </p>
+          {element.title ? (
+            <p className="mt-0.5 truncate text-lg font-medium text-white">
+              {element.title}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-base text-surface-500 italic">
+              No title set
+            </p>
+          )}
+        </div>
         <Badge
           variant={element.isActive ? "success" : "secondary"}
-          className="ml-auto text-[10px]"
+          className="shrink-0 px-2.5 py-0.5 text-xs"
         >
           {element.isActive ? "Active" : "Inactive"}
         </Badge>
         {canEdit && (
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" />
+          <Button
+            variant="secondary"
+            size="default"
+            className="h-10 shrink-0 gap-2 px-4"
+            onClick={onEdit}
+          >
+            <Pencil className="h-4 w-4" />
+            Edit
           </Button>
         )}
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onDelete}>
-          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 shrink-0 text-surface-400 hover:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 className="h-5 w-5" />
         </Button>
       </div>
 
-      <div className="border-x border-b border-surface-800 bg-surface-950">
-        {renderPreview()}
+      <div className="bg-surface-950/80">{renderPreview()}</div>
+    </div>
+  );
+}
+
+function SortableCategoryPreview({ category }: { category: Category }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? ("relative" as const) : undefined,
+  };
+
+  const videoCount =
+    category._count?.videoLinks ?? category._count?.videos ?? 0;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group overflow-hidden rounded-2xl border border-surface-600/80 bg-surface-900/60 shadow-lg shadow-black/25 ring-1 ring-white/5 transition-shadow hover:ring-white/10 ${
+        isDragging
+          ? "scale-[1.01] opacity-95 shadow-2xl shadow-primary-900/40 ring-2 ring-primary-500/50"
+          : ""
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-3 border-b border-surface-700/80 bg-surface-800/40 px-4 py-3.5 sm:px-5">
+        <button
+          type="button"
+          className="cursor-grab touch-none rounded-lg bg-surface-800 p-2.5 text-surface-400 transition-colors hover:bg-surface-700 hover:text-white active:cursor-grabbing"
+          aria-label="Drag to reorder"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-5 w-5" />
+        </button>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-950/50 ring-1 ring-emerald-800/40">
+          <LayoutGrid className="h-5 w-5 text-emerald-400" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold uppercase tracking-wide text-surface-500">
+            Category row
+          </p>
+          <p className="mt-0.5 text-lg font-medium text-white">{category.name}</p>
+        </div>
+        <span className="text-base text-surface-400">
+          {videoCount} video{videoCount !== 1 ? "s" : ""}
+        </span>
+        <Badge variant="outline" className="shrink-0 px-2.5 py-0.5 text-xs">
+          From categories
+        </Badge>
+      </div>
+      <div className="flex items-center gap-3 border-t border-surface-800/60 bg-surface-950/60 px-4 py-2.5 sm:px-5">
+        <div className="flex min-w-0 flex-1 gap-1.5 overflow-hidden opacity-70">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div
+              key={i}
+              className="h-9 w-14 shrink-0 rounded-md bg-surface-800 ring-1 ring-surface-700/80"
+            />
+          ))}
+        </div>
+        <span className="shrink-0 text-xs text-surface-500">Channel layout</span>
       </div>
     </div>
   );
@@ -409,7 +564,7 @@ function SortableElementPreview({
 
 function HeroPreview({ element }: { element: HomepageElement }) {
   return (
-    <div className="relative min-h-[180px] overflow-hidden">
+    <div className="relative min-h-[200px] overflow-hidden sm:min-h-[220px]">
       {element.imageUrl ? (
         <img
           src={element.imageUrl}
@@ -417,16 +572,18 @@ function HeroPreview({ element }: { element: HomepageElement }) {
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-primary-900/40 via-surface-950 to-surface-950" />
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-900/50 via-surface-900 to-surface-950" />
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/50 to-transparent" />
-      <div className="relative flex items-end px-6 pb-6 pt-20">
+      <div className="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/60 to-transparent" />
+      <div className="relative flex min-h-[200px] items-end px-6 pb-5 pt-14 sm:min-h-[220px] sm:px-7 sm:pb-6 sm:pt-16">
         <div>
-          <h3 className="text-xl font-bold text-white">
+          <h3 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
             {element.title || "Untitled Hero"}
           </h3>
           {element.subtitle && (
-            <p className="mt-1 text-sm text-surface-300">{element.subtitle}</p>
+            <p className="mt-1.5 max-w-xl text-sm text-surface-200 sm:text-base">
+              {element.subtitle}
+            </p>
           )}
         </div>
       </div>
@@ -443,62 +600,69 @@ function ContentRowPreview({ element }: { element: HomepageElement }) {
   const scroll = (dir: "left" | "right") => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollBy({
-      left: dir === "left" ? -260 : 260,
+      left: dir === "left" ? -320 : 320,
       behavior: "smooth",
     });
   };
 
+  const thumb = (v: Video) =>
+    (v as Video & { thumbnailUrl?: string }).thumbnailUrl ??
+    v.thumbnailAssets?.[0]?.imageUrl;
+
   return (
-    <div className="px-6 py-4">
-      <h3 className="mb-3 text-sm font-semibold text-white">
+    <div className="px-5 py-4 sm:px-6 sm:py-5">
+      <h3 className="mb-3 text-base font-semibold text-white sm:text-lg">
         {element.title || "Untitled Row"}
       </h3>
       {videos.length === 0 ? (
-        <p className="py-4 text-center text-sm text-surface-500">
-          No videos in this row yet
-        </p>
+        <div className="rounded-xl border border-dashed border-surface-600 bg-surface-900/50 py-6 text-center sm:py-7">
+          <Play className="mx-auto mb-2 h-8 w-8 text-surface-600" />
+          <p className="text-sm text-surface-400">
+            No videos yet — click Edit to add videos.
+          </p>
+        </div>
       ) : (
         <div className="group/scroll relative">
           <div
             ref={scrollRef}
-            className="flex gap-3 overflow-x-auto pb-2 scrollbar-none"
+            className="flex gap-3 overflow-x-auto pb-2 pt-0.5 scrollbar-none"
           >
             {videos.map((video) => (
-              <div key={video.id} className="w-[180px] shrink-0">
-                <div className="relative aspect-video overflow-hidden rounded-lg bg-surface-800">
-                  {video.thumbnailAssets?.[0]?.imageUrl ? (
+              <div key={video.id} className="w-[220px] shrink-0 sm:w-[260px]">
+                <div className="relative aspect-video overflow-hidden rounded-xl bg-surface-800 ring-1 ring-surface-700">
+                  {thumb(video) ? (
                     <img
-                      src={video.thumbnailAssets[0].imageUrl}
+                      src={thumb(video)!}
                       alt={video.title}
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    <div className="flex h-full items-center justify-center">
-                      <Play className="h-6 w-6 text-surface-600" />
+                    <div className="flex h-full items-center justify-center bg-surface-800/80">
+                      <Play className="h-10 w-10 text-surface-600" />
                     </div>
                   )}
                 </div>
-                <p className="mt-1.5 line-clamp-1 text-xs text-surface-300">
+                <p className="mt-2 line-clamp-2 text-sm font-medium leading-snug text-surface-200">
                   {video.title}
                 </p>
               </div>
             ))}
           </div>
-          {videos.length > 3 && (
+          {videos.length > 2 && (
             <>
               <button
                 type="button"
                 onClick={() => scroll("left")}
-                className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover/scroll:opacity-100"
+                className="absolute left-1 top-[42%] z-10 -translate-y-1/2 rounded-full bg-black/70 p-2 text-white opacity-0 shadow-lg transition-opacity group-hover/scroll:opacity-100"
               >
-                <ChevronLeft className="h-3 w-3" />
+                <ChevronLeft className="h-5 w-5" />
               </button>
               <button
                 type="button"
                 onClick={() => scroll("right")}
-                className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover/scroll:opacity-100"
+                className="absolute right-1 top-[42%] z-10 -translate-y-1/2 rounded-full bg-black/70 p-2 text-white opacity-0 shadow-lg transition-opacity group-hover/scroll:opacity-100"
               >
-                <ChevronRight className="h-3 w-3" />
+                <ChevronRight className="h-5 w-5" />
               </button>
             </>
           )}
@@ -510,8 +674,8 @@ function ContentRowPreview({ element }: { element: HomepageElement }) {
 
 function TextDividerPreview({ element }: { element: HomepageElement }) {
   return (
-    <div className="px-6 py-6 text-center">
-      <p className="text-lg font-semibold text-white">
+    <div className="px-6 py-6 text-center sm:px-8 sm:py-7">
+      <p className="text-xl font-semibold tracking-tight text-white sm:text-2xl">
         {element.text || "Text goes here"}
       </p>
     </div>
@@ -520,8 +684,8 @@ function TextDividerPreview({ element }: { element: HomepageElement }) {
 
 function LineDividerPreview() {
   return (
-    <div className="px-6 py-4">
-      <hr className="border-surface-700" />
+    <div className="px-6 py-4 sm:px-8 sm:py-5">
+      <hr className="border-t-2 border-surface-600" />
     </div>
   );
 }
@@ -586,8 +750,7 @@ function ElementFormDialog({
     setUploading(true);
     try {
       const result = await uploadImage(file);
-      const fullUrl = `${window.location.protocol}//${window.location.hostname}:4000${result.url}`;
-      setImageUrl(fullUrl);
+      setImageUrl(resolveUploadedAssetUrl(result.url));
     } catch (err: any) {
       setUploadError(err?.message ?? "Upload failed");
       setImagePreview("");

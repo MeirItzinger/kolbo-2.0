@@ -2,20 +2,34 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { env } from "./config/env";
+import {
+  env,
+  normalizeUrlOrigin,
+  parseCorsExtraOrigins,
+} from "./config/env";
 import { requestLogger } from "./middleware/requestLogger";
 import { errorHandler } from "./middleware/errorHandler";
 import apiRoutes from "./routes";
 
 const app = express();
 
+const corsAllowedOrigins = new Set<string>([
+  normalizeUrlOrigin(env.CLIENT_URL),
+  ...parseCorsExtraOrigins().map(normalizeUrlOrigin),
+]);
+
 // ─── CORS ───────────────────────────────────────────────
 app.use(
   cors({
     origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      const normalized = normalizeUrlOrigin(origin);
       if (
-        !origin ||
-        origin === env.CLIENT_URL ||
+        corsAllowedOrigins.has(origin) ||
+        corsAllowedOrigins.has(normalized) ||
         /^http:\/\/localhost:\d+$/.test(origin) ||
         /^https:\/\/[^\s]+\.vercel\.app$/.test(origin)
       ) {

@@ -3,6 +3,21 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/apiError";
 import { prisma } from "../lib/prisma";
 
+function addVideoComputedFields(video: Record<string, unknown>) {
+  const thumbnailAssets = video.thumbnailAssets as { imageUrl: string }[] | undefined;
+  const videoAssets = video.videoAssets as { muxPlaybackId?: string | null; durationSeconds?: number | null }[] | undefined;
+  const uploadedThumb = thumbnailAssets?.[0]?.imageUrl ?? null;
+  const muxPlaybackId = videoAssets?.[0]?.muxPlaybackId ?? null;
+  const muxThumb = muxPlaybackId
+    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?width=640&height=360&fit_mode=smartcrop`
+    : null;
+  return {
+    ...video,
+    thumbnailUrl: uploadedThumb ?? muxThumb,
+    duration: (video.durationSeconds as number | null) ?? videoAssets?.[0]?.durationSeconds ?? null,
+  };
+}
+
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const { channelId, scopeType, active } = req.query;
 
@@ -24,7 +39,14 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
               slug: true,
               title: true,
               status: true,
+              durationSeconds: true,
+              isFree: true,
               thumbnailAssets: { where: { type: "POSTER" }, take: 1 },
+              videoAssets: {
+                select: { muxPlaybackId: true, durationSeconds: true },
+                take: 1,
+                orderBy: { createdAt: "desc" as const },
+              },
             },
           },
           channel: { select: { id: true, slug: true, name: true } },
@@ -34,7 +56,15 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     },
   });
 
-  res.json({ status: "success", data: rows });
+  const enriched = rows.map((row) => ({
+    ...row,
+    items: row.items.map((item) => ({
+      ...item,
+      video: item.video ? addVideoComputedFields(item.video) : null,
+    })),
+  }));
+
+  res.json({ status: "success", data: enriched });
 });
 
 export const getById = asyncHandler(async (req: Request, res: Response) => {

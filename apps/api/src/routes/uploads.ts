@@ -1,6 +1,8 @@
+import fs from "fs";
+import path from "path";
 import { Router } from "express";
 import multer from "multer";
-import path from "path";
+import { put } from "@vercel/blob";
 import { v4 as uuid } from "uuid";
 import { authenticate } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
@@ -10,17 +12,12 @@ import type { Request, Response } from "express";
 
 const UPLOAD_DIR = path.resolve(__dirname, "../../uploads");
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${uuid()}${ext}`);
-  },
-});
+/** Vercel serverless request bodies are capped (~4.5 MB); stay under with multipart overhead. */
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_IMAGE_BYTES },
   fileFilter: (_req, file, cb) => {
     const allowed = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
     const ext = path.extname(file.originalname).toLowerCase();
@@ -40,9 +37,48 @@ router.post(
   requireRole("SUPER_ADMIN", "CHANNEL_ADMIN", "CREATOR_ADMIN"),
   upload.single("file"),
   asyncHandler(async (req: Request, res: Response) => {
-    if (!req.file) throw ApiError.badRequest("No file uploaded");
+    if (!req.file?.buffer) throw ApiError.badRequest("No file uploaded");
 
-    const url = `/uploads/${req.file.filename}`;
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const allowed = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
+    if (!allowed.includes(ext)) {
+      throw ApiError.badRequest(`File type ${ext} is not allowed`);
+    }
+
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+
+    if (token) {
+      const pathname = `kolbo/images/${uuid()}${ext}`;
+      try {
+        const blob = await put(pathname, req.file.buffer, {
+          access: "public",
+          token,
+          contentType: req.file.mimetype || `image/${ext.replace(".", "")}`,
+        });
+        res.status(201).json({ status: "success", data: { url: blob.url } });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Blob upload failed";
+        console.error("[uploads] Vercel Blob put failed:", err);
+        throw ApiError.internal(
+          `Image storage failed: ${message}. Check BLOB_READ_WRITE_TOKEN and Blob store in Vercel.`
+        );
+      }
+      return;
+    }
+
+    if (process.env.VERCEL) {
+      throw ApiError.internal(
+        "Image uploads require Vercel Blob: add a Blob store to this project (env BLOB_READ_WRITE_TOKEN) and redeploy."
+      );
+    }
+
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    }
+    const filename = `${uuid()}${ext}`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), req.file.buffer);
+    const url = `/uploads/${filename}`;
     res.status(201).json({ status: "success", data: { url } });
   }),
 );

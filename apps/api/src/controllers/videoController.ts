@@ -104,9 +104,26 @@ function attachCategoriesToVideo(video: Record<string, unknown>) {
     (video.categoryLinks as { category: { id: string; name: string; slug: string } }[] | undefined) ??
     [];
   const { categoryLinks, ...rest } = video;
-  return {
+  return addComputedFields({
     ...rest,
     categories: links.map((l) => l.category),
+  });
+}
+
+function addComputedFields(video: Record<string, unknown>) {
+  const thumbnailAssets = video.thumbnailAssets as { imageUrl: string }[] | undefined;
+  const videoAssets = video.videoAssets as { muxPlaybackId?: string | null; durationSeconds?: number | null }[] | undefined;
+
+  const uploadedThumb = thumbnailAssets?.[0]?.imageUrl ?? null;
+  const muxPlaybackId = videoAssets?.[0]?.muxPlaybackId ?? null;
+  const muxThumb = muxPlaybackId
+    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?width=640&height=360&fit_mode=smartcrop`
+    : null;
+
+  return {
+    ...video,
+    thumbnailUrl: uploadedThumb ?? muxThumb,
+    duration: (video.durationSeconds as number | null) ?? videoAssets?.[0]?.durationSeconds ?? null,
   };
 }
 
@@ -225,7 +242,7 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     creatorProfile: { select: { id: true, slug: true, displayName: true } },
     thumbnailAssets: { where: { type: "POSTER" as const }, take: 1 },
     videoAssets: {
-      select: { id: true, assetStatus: true, durationSeconds: true },
+      select: { id: true, assetStatus: true, durationSeconds: true, muxPlaybackId: true },
       take: 1,
       orderBy: { createdAt: "desc" as const },
     },

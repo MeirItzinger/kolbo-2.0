@@ -23,6 +23,15 @@ const API_ORIGIN = import.meta.env.VITE_API_URL
   ? import.meta.env.VITE_API_URL.replace(/\/api$/, "")
   : "";
 
+/** Absolute URL for display (img src): Blob/CDN or API origin + /uploads path. */
+export function resolveUploadedAssetUrl(pathOrUrl: string): string {
+  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+    return pathOrUrl;
+  }
+  const base = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
+  return API_ORIGIN ? `${API_ORIGIN}${base}` : base;
+}
+
 function resolveUploads(value: unknown): unknown {
   if (typeof value === "string") {
     return value.startsWith("/uploads/") ? `${API_ORIGIN}${value}` : value;

@@ -15,6 +15,22 @@ function optional(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
+/** Normalize to scheme + host + port (no path) for CORS comparison. */
+export function normalizeUrlOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url.replace(/\/$/, "");
+  }
+}
+
+/** Comma-separated extra browser origins allowed for CORS (e.g. apex + www). */
+export function parseCorsExtraOrigins(): string[] {
+  const raw = process.env.CORS_EXTRA_ORIGINS;
+  if (!raw) return [];
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 export const env = {
   PORT: parseInt(optional("PORT", "4000"), 10),
   NODE_ENV: optional("NODE_ENV", "development") as

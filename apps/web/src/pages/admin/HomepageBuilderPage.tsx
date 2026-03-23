@@ -47,6 +47,7 @@ import {
   adminListChannels,
   uploadImage,
 } from "@/api/admin";
+import { resolveUploadedAssetUrl } from "@/api/client";
 import { listChannels } from "@/api/channels";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -647,8 +648,7 @@ function ElementFormDialog({
     setUploading(true);
     try {
       const result = await uploadImage(file);
-      const fullUrl = `${window.location.protocol}//${window.location.hostname}:4000${result.url}`;
-      setImageUrl(fullUrl);
+      setImageUrl(resolveUploadedAssetUrl(result.url));
     } catch (err: any) {
       setUploadError(err?.message ?? "Upload failed");
       setImagePreview("");

@@ -4,6 +4,12 @@
   "buildCommand": "cd apps/api && npx prisma generate && npx tsc --noEmitOnError false; cd ../.. && cd apps/web && npx vite build",
   "outputDirectory": "apps/web/dist",
   "framework": null,
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
   "rewrites": [
     { "source": "/api", "destination": "/api" },
     { "source": "/api/(.*)", "destination": "/api" },

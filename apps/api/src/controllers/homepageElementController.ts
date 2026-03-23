@@ -3,6 +3,21 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/apiError";
 import { prisma } from "../lib/prisma";
 
+function addVideoComputedFields(video: Record<string, unknown>) {
+  const thumbnailAssets = video.thumbnailAssets as { imageUrl: string }[] | undefined;
+  const videoAssets = video.videoAssets as { muxPlaybackId?: string | null; durationSeconds?: number | null }[] | undefined;
+  const uploadedThumb = thumbnailAssets?.[0]?.imageUrl ?? null;
+  const muxPlaybackId = videoAssets?.[0]?.muxPlaybackId ?? null;
+  const muxThumb = muxPlaybackId
+    ? `https://image.mux.com/${muxPlaybackId}/thumbnail.jpg?width=640&height=360&fit_mode=smartcrop`
+    : null;
+  return {
+    ...video,
+    thumbnailUrl: uploadedThumb ?? muxThumb,
+    duration: (video.durationSeconds as number | null) ?? videoAssets?.[0]?.durationSeconds ?? null,
+  };
+}
+
 export const list = asyncHandler(async (_req: Request, res: Response) => {
   const elements = await prisma.homepageElement.findMany({
     where: { channelId: null },
@@ -20,6 +35,11 @@ export const list = asyncHandler(async (_req: Request, res: Response) => {
               durationSeconds: true,
               channel: { select: { id: true, slug: true, name: true } },
               thumbnailAssets: { where: { type: "POSTER" }, take: 1 },
+              videoAssets: {
+                select: { muxPlaybackId: true, durationSeconds: true },
+                take: 1,
+                orderBy: { createdAt: "desc" as const },
+              },
             },
           },
         },
@@ -27,7 +47,15 @@ export const list = asyncHandler(async (_req: Request, res: Response) => {
     },
   });
 
-  res.json({ status: "success", data: elements });
+  const enriched = elements.map((el) => ({
+    ...el,
+    items: el.items.map((item) => ({
+      ...item,
+      video: item.video ? addVideoComputedFields(item.video as unknown as Record<string, unknown>) : null,
+    })),
+  }));
+
+  res.json({ status: "success", data: enriched });
 });
 
 export const getById = asyncHandler(async (req: Request, res: Response) => {

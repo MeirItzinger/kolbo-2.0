@@ -155,15 +155,34 @@ export default function ChannelPage() {
     : rawVideos?.data ?? [];
 
   /** True if at least one video is linked to an active channel category (many-to-many). */
-  const hasVideosInCategories = videos.some((v) =>
-    (v.categories ?? []).some((c) =>
-      channelCategories.some((cc) => cc.id === c.id),
-    ),
-  );
+  type UnifiedPageItem =
+    | { kind: "element"; sortOrder: number; data: HomepageElement }
+    | { kind: "category"; sortOrder: number; data: Category };
 
-  /** Use per-category rows only when assignments exist; otherwise show one grid (avoids “empty” sections after DB migration lost links). */
-  const useCategorySectionsLayout =
-    channelCategories.length > 0 && hasVideosInCategories;
+  const unifiedPageItems: UnifiedPageItem[] = [
+    ...pageElements.map((el): UnifiedPageItem => ({
+      kind: "element",
+      sortOrder: el.sortOrder ?? 0,
+      data: el,
+    })),
+    ...channelCategories
+      .filter((cat) =>
+        videos.some((v) =>
+          (v.categories ?? []).some((c) => c.id === cat.id),
+        ),
+      )
+      .map((cat): UnifiedPageItem => ({
+        kind: "category",
+        sortOrder: cat.sortOrder ?? 0,
+        data: cat,
+      })),
+  ].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const uncategorizedVideos = videos.filter((v) => {
+    const ids = (v.categories ?? []).map((c) => c.id);
+    if (ids.length === 0) return true;
+    return !ids.some((id) => channelCategories.some((c) => c.id === id));
+  });
 
   const handleVideoClick = (video: Video) => {
     setSelectedVideo(video);
@@ -265,12 +284,17 @@ export default function ChannelPage() {
             </div>
           )}
           <div className="flex-1 pb-2">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-bold text-white sm:text-3xl">
                 {channel.name}
               </h1>
               {channel.isActive && (
-                <CheckCircle className="h-5 w-5 text-primary-400" />
+                <CheckCircle className="h-5 w-5 shrink-0 text-primary-400" />
+              )}
+              {!hasChannelSub && (
+                <Button size="sm" className="shrink-0" asChild>
+                  <Link to={`/pricing/${slug}`}>Subscribe to channel</Link>
+                </Button>
               )}
             </div>
             {channel.description && (
@@ -287,75 +311,68 @@ export default function ChannelPage() {
         </div>
       </div>
 
-      {/* Channel content — page builder elements (if any) */}
-      {pageElements.length > 0 && (
-        <div className="mt-10">
-          {pageElements.map((el) => (
-            <ChannelSection key={el.id} element={el} onVideoClick={handleVideoClick} />
-          ))}
-        </div>
-      )}
-
-      {/* Category rows / default grid */}
-      <section className="mx-auto mt-10 max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-        {videosQuery.isLoading ? (
+      {/* Unified channel content: page builder elements + category rows in sort order */}
+      {videosQuery.isLoading ? (
+        <section className="mx-auto mt-10 max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
           <div className="flex justify-center py-12">
             <Spinner />
           </div>
-        ) : videos.length === 0 && pageElements.length === 0 ? (
+        </section>
+      ) : unifiedPageItems.length === 0 && videos.length === 0 ? (
+        <section className="mx-auto mt-10 max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
           <div className="py-16 text-center">
             <Play className="mx-auto mb-3 h-10 w-10 text-surface-600" />
             <p className="text-surface-500">No videos available yet.</p>
           </div>
-        ) : useCategorySectionsLayout ? (
-          <div className="space-y-10">
-            {channelCategories.map((cat) => {
-              const catVideos = videos.filter((v) =>
-                (v.categories ?? []).some((c) => c.id === cat.id),
-              );
-              if (catVideos.length === 0) return null;
-              return (
+        </section>
+      ) : unifiedPageItems.length > 0 ? (
+        <div className="mt-10 pb-16">
+          {unifiedPageItems.map((item) =>
+            item.kind === "element" ? (
+              <ChannelSection
+                key={item.data.id}
+                element={item.data}
+                onVideoClick={handleVideoClick}
+              />
+            ) : (
+              <section
+                key={item.data.id}
+                className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8"
+              >
                 <CategoryRow
-                  key={cat.id}
-                  category={cat}
-                  videos={catVideos}
+                  category={item.data}
+                  videos={videos.filter((v) =>
+                    (v.categories ?? []).some((c) => c.id === item.data.id),
+                  )}
                   onVideoClick={handleVideoClick}
                 />
-              );
-            })}
-            {(() => {
-              const uncategorized = videos.filter(
-                (v) => {
-                  const ids = (v.categories ?? []).map((c) => c.id);
-                  if (ids.length === 0) return true;
-                  return !ids.some((id) => channelCategories.some((c) => c.id === id));
-                },
-              );
-              if (uncategorized.length === 0) return null;
-              return (
-                <CategoryRow
-                  category={{ id: "_uncategorized", name: "More Videos", slug: "more", channelId: "", sortOrder: 999, isActive: true, createdAt: "", updatedAt: "" }}
-                  videos={uncategorized}
-                  onVideoClick={handleVideoClick}
-                />
-              );
-            })()}
+              </section>
+            ),
+          )}
+          {uncategorizedVideos.length > 0 && (
+            <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+              <CategoryRow
+                category={{ id: "_uncategorized", name: "More Videos", slug: "more", channelId: "", sortOrder: 999, isActive: true, createdAt: "", updatedAt: "" }}
+                videos={uncategorizedVideos}
+                onVideoClick={handleVideoClick}
+              />
+            </section>
+          )}
+        </div>
+      ) : videos.length > 0 ? (
+        <section className="mx-auto mt-10 max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
+          <h2 className="mb-6 text-xl font-semibold text-white">Videos</h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {videos.map((v) => (
+              <VideoCard
+                key={v.id}
+                video={v}
+                onClick={() => handleVideoClick(v)}
+              />
+            ))}
           </div>
-        ) : videos.length > 0 ? (
-          <>
-            <h2 className="mb-6 text-xl font-semibold text-white">Videos</h2>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-              {videos.map((v) => (
-                <VideoCard
-                  key={v.id}
-                  video={v}
-                  onClick={() => handleVideoClick(v)}
-                />
-              ))}
-            </div>
-          </>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
       {/* Video modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>

@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ScrollToTop } from "@/components/ScrollToTop";
 import { queryClient } from "@/lib/queryClient";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AdvertiserAuthProvider } from "@/hooks/useAdvertiserAuth";
@@ -148,6 +149,7 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        <ScrollToTop />
         <AuthProvider>
           <AdvertiserAuthProvider>
           <Suspense fallback={<PageLoader />}>
