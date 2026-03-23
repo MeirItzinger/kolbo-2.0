@@ -534,29 +534,46 @@ function ChannelSection({
 }
 
 function ChannelHeroSection({ element }: { element: HomepageElement }) {
+  const linked =
+    (element.items ?? [])
+      .map((item) => item.video)
+      .find((v): v is Video => !!v && !!v.slug) ?? null;
+
+  const imgSrc = element.imageUrl
+    ? resolveUploadedAssetUrl(element.imageUrl)
+    : null;
+
   return (
-    <div className="relative h-48 sm:h-64 lg:h-80 overflow-hidden">
-      {element.imageUrl ? (
+    <section className="relative min-h-[420px] sm:min-h-[520px]">
+      {imgSrc ? (
         <img
-          src={element.imageUrl}
+          src={imgSrc}
           alt={element.title ?? ""}
-          className="h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="h-full w-full bg-gradient-to-br from-primary-900/30 via-surface-900 to-surface-950" />
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-900/40 via-surface-950 to-surface-950" />
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/40 to-transparent" />
-      <div className="absolute bottom-0 left-0 right-0 px-4 pb-8 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <h2 className="text-2xl font-bold text-white sm:text-3xl">
+      <div className="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/50 to-transparent" />
+      <div className="relative mx-auto flex max-w-7xl items-end px-4 pb-16 pt-32 sm:px-6 sm:pt-48 lg:px-8">
+        <div className="max-w-xl">
+          <h2 className="text-3xl font-bold text-white sm:text-5xl">
             {element.title}
           </h2>
           {element.subtitle && (
-            <p className="mt-2 max-w-2xl text-surface-300">{element.subtitle}</p>
+            <p className="mt-4 text-lg text-surface-300">{element.subtitle}</p>
+          )}
+          {linked && (
+            <Button size="lg" className="mt-6 gap-2" asChild>
+              <Link to={`/watch/${linked.slug}`}>
+                Watch now
+                <Play className="h-4 w-4" />
+              </Link>
+            </Button>
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 

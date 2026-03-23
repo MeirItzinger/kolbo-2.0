@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Play, Search, Tv, X, Lock } from "lucide-react";
+import { Play, Search, Tv, X, Lock, ChevronLeft, ChevronRight, Compass } from "lucide-react";
 import { getContentRows } from "@/api/landing";
 import { listChannels } from "@/api/channels";
 import { listVideos } from "@/api/videos";
@@ -16,6 +16,7 @@ export default function ExplorePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const channelFilter = searchParams.get("channel") ?? "";
   const [searchTerm, setSearchTerm] = useState("");
+  const pillsRef = useRef<HTMLDivElement>(null);
 
   const channelsQuery = useQuery({
     queryKey: ["explore", "channels"],
@@ -43,13 +44,35 @@ export default function ExplorePage() {
     else setSearchParams({});
   };
 
+  const scrollPills = (dir: "left" | "right") => {
+    pillsRef.current?.scrollBy({ left: dir === "left" ? -260 : 260, behavior: "smooth" });
+  };
+
+  const activeChannel = channels.find((ch) => ch.id === channelFilter);
+
   return (
     <div className="min-h-screen bg-surface-950">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* Page header */}
+      <div className="relative overflow-hidden border-b border-surface-800">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-900/25 via-surface-950 to-surface-950" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(124,58,237,0.12),transparent_55%)]" />
+        <div className="relative mx-auto max-w-7xl px-4 pb-8 pt-10 sm:px-6 lg:px-8">
+          <div className="mb-1 flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600/20 ring-1 ring-primary-500/30">
+              <Compass className="h-4 w-4 text-primary-400" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              Browse
+            </h1>
+          </div>
+          <p className="mb-6 ml-[42px] text-sm text-surface-400">
+            {activeChannel
+              ? `Showing content from ${activeChannel.name}`
+              : "Discover videos across all channels"}
+          </p>
 
-        {/* Search bar */}
-        <div className="mb-8">
-          <div className="relative mx-auto max-w-2xl">
+          {/* Search bar */}
+          <div className="relative max-w-2xl">
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-surface-500" />
             <Input
               type="search"
@@ -69,46 +92,79 @@ export default function ExplorePage() {
             )}
           </div>
         </div>
+      </div>
 
-        {/* Channel filter pills */}
-        {channels.length > 0 && (
-          <div className="mb-8 flex flex-wrap gap-2">
+      {/* Channel filter — sticky horizontal scroll strip */}
+      {channels.length > 0 && (
+        <div className="sticky top-16 z-10 border-b border-surface-800/60 bg-surface-950/90 backdrop-blur-md">
+          <div className="relative mx-auto max-w-7xl">
+            {/* Left fade + arrow */}
+            <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 w-14">
+              <div className="h-full w-full bg-gradient-to-r from-surface-950 via-surface-950/80 to-transparent" />
+            </div>
             <button
               type="button"
-              onClick={() => setChannel("")}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                !channelFilter
-                  ? "bg-primary-600 text-white"
-                  : "bg-surface-800 text-surface-300 hover:bg-surface-700 hover:text-white",
-              )}
+              onClick={() => scrollPills("left")}
+              className="absolute left-1.5 top-1/2 z-20 -translate-y-1/2 rounded-full bg-surface-800 p-1 text-surface-300 shadow-md transition-colors hover:bg-surface-700 hover:text-white"
             >
-              All
+              <ChevronLeft className="h-4 w-4" />
             </button>
-            {channels.map((ch) => (
+
+            <div
+              ref={pillsRef}
+              className="flex gap-2 overflow-x-auto scrollbar-none px-10 py-3"
+            >
               <button
-                key={ch.id}
                 type="button"
-                onClick={() => setChannel(ch.id)}
+                onClick={() => setChannel("")}
                 className={cn(
-                  "flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                  channelFilter === ch.id
-                    ? "bg-primary-600 text-white"
+                  "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                  !channelFilter
+                    ? "bg-primary-600 text-white shadow-sm shadow-primary-900/60 ring-1 ring-primary-500/50"
                     : "bg-surface-800 text-surface-300 hover:bg-surface-700 hover:text-white",
                 )}
               >
-                {ch.logoUrl ? (
-                  <img src={ch.logoUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
-                ) : (
-                  <Tv className="h-4 w-4" />
-                )}
-                {ch.name}
+                All
               </button>
-            ))}
-          </div>
-        )}
+              {channels.map((ch) => (
+                <button
+                  key={ch.id}
+                  type="button"
+                  onClick={() => setChannel(ch.id)}
+                  className={cn(
+                    "shrink-0 flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                    channelFilter === ch.id
+                      ? "bg-primary-600 text-white shadow-sm shadow-primary-900/60 ring-1 ring-primary-500/50"
+                      : "bg-surface-800 text-surface-300 hover:bg-surface-700 hover:text-white",
+                  )}
+                >
+                  {ch.logoUrl ? (
+                    <img src={ch.logoUrl} alt="" className="h-4 w-4 rounded-full object-cover ring-1 ring-white/10" />
+                  ) : (
+                    <Tv className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  {ch.name}
+                </button>
+              ))}
+            </div>
 
-        {/* Search results */}
+            {/* Right fade + arrow */}
+            <div className="pointer-events-none absolute bottom-0 right-0 top-0 z-10 w-14">
+              <div className="h-full w-full bg-gradient-to-l from-surface-950 via-surface-950/80 to-transparent" />
+            </div>
+            <button
+              type="button"
+              onClick={() => scrollPills("right")}
+              className="absolute right-1.5 top-1/2 z-20 -translate-y-1/2 rounded-full bg-surface-800 p-1 text-surface-300 shadow-md transition-colors hover:bg-surface-700 hover:text-white"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Content area */}
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {searchTerm.length >= 2 ? (
           <div>
             <h2 className="mb-6 text-xl font-semibold text-white">
@@ -125,9 +181,12 @@ export default function ExplorePage() {
                 ))}
               </div>
             ) : (
-              <div className="py-16 text-center">
-                <Search className="mx-auto mb-3 h-10 w-10 text-surface-600" />
-                <p className="text-surface-400">No results found</p>
+              <div className="py-20 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-800">
+                  <Search className="h-7 w-7 text-surface-500" />
+                </div>
+                <p className="font-medium text-surface-300">No results found</p>
+                <p className="mt-1 text-sm text-surface-500">Try a different search term</p>
               </div>
             )}
           </div>
@@ -142,10 +201,13 @@ export default function ExplorePage() {
             ))}
           </div>
         ) : (
-          <div className="py-16 text-center">
-            <Tv className="mx-auto mb-3 h-10 w-10 text-surface-600" />
-            <p className="text-surface-400">No content available yet</p>
-            <Button variant="outline" className="mt-4" asChild>
+          <div className="py-20 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-800">
+              <Tv className="h-7 w-7 text-surface-500" />
+            </div>
+            <p className="font-medium text-surface-300">No content available yet</p>
+            <p className="mt-1 text-sm text-surface-500">Check back soon</p>
+            <Button variant="outline" className="mt-6" asChild>
               <Link to="/">Back to Home</Link>
             </Button>
           </div>
@@ -249,7 +311,7 @@ function VideoCard({ video }: { video: Video }) {
           </p>
         )}
         {!video.isFree && (
-          <p className="mt-auto pt-2 flex items-center gap-1 text-xs text-surface-500">
+          <p className="mt-auto flex items-center gap-1 pt-2 text-xs text-surface-500">
             <Lock className="h-3 w-3" />
             Subscription required
           </p>

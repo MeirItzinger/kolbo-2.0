@@ -111,6 +111,7 @@ export async function adminListVideos(params?: {
   const { data } = await api.get("/videos", {
     params: {
       ...rest,
+      forAdmin: true,
       ...(perPage != null ? { limit: perPage } : {}),
     },
   });

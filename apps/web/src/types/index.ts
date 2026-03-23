@@ -132,6 +132,8 @@ export interface Video {
   duration?: number | null;
   rentalOption?: RentalOption;
   purchaseOption?: PurchaseOption;
+  /** Present when GET /videos/:slug is called with optional auth; mirrors playback token access. */
+  playbackAllowed?: boolean;
   createdAt: string;
   updatedAt: string;
 }

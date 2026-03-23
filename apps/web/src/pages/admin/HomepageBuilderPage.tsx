@@ -245,6 +245,7 @@ export default function HomepageBuilderPage() {
       {/* Create / Edit dialogs */}
       {creatingType && creatingType !== "CONTENT_ROW" && (
         <ElementFormDialog
+          key={`create-${creatingType}`}
           type={creatingType}
           element={null}
           onClose={() => setCreatingType(null)}
@@ -260,6 +261,7 @@ export default function HomepageBuilderPage() {
 
       {editingElement && editingElement.type !== "CONTENT_ROW" && (
         <ElementFormDialog
+          key={editingElement.id}
           type={editingElement.type}
           element={editingElement}
           onClose={() => setEditingElement(null)}
@@ -417,11 +419,15 @@ function SortableElementPreview({
 }
 
 function HeroPreview({ element }: { element: HomepageElement }) {
+  const linkedVideo = (element.items ?? [])
+    .map((i) => i.video)
+    .find((v): v is Video => !!v);
+
   return (
     <div className="relative min-h-[180px] overflow-hidden">
       {element.imageUrl ? (
         <img
-          src={element.imageUrl}
+          src={resolveUploadedAssetUrl(element.imageUrl)}
           alt={element.title ?? ""}
           className="absolute inset-0 h-full w-full object-cover"
         />
@@ -436,6 +442,12 @@ function HeroPreview({ element }: { element: HomepageElement }) {
           </h3>
           {element.subtitle && (
             <p className="mt-1 text-sm text-surface-300">{element.subtitle}</p>
+          )}
+          {linkedVideo && (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-black/50 px-3 py-1 text-xs font-medium text-white ring-1 ring-white/20">
+              <Play className="h-3.5 w-3.5" />
+              Plays: {linkedVideo.title}
+            </p>
           )}
         </div>
       </div>
@@ -611,9 +623,20 @@ function ElementFormDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [imageUrl, setImageUrl] = useState(element?.imageUrl ?? "");
-  const [imagePreview, setImagePreview] = useState(element?.imageUrl ?? "");
+  const [imagePreview, setImagePreview] = useState(
+    element?.imageUrl ? resolveUploadedAssetUrl(element.imageUrl) : "",
+  );
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [heroVideoId, setHeroVideoId] = useState(
+    () => element?.items?.find((i) => i.videoId)?.videoId ?? "",
+  );
+
+  const heroVideosQuery = useQuery({
+    queryKey: ["admin", "videos", "homepage-hero-picker"],
+    queryFn: () => adminListVideos({ perPage: 250 }),
+    enabled: type === "HERO",
+  });
 
   const schema =
     type === "HERO"
@@ -684,8 +707,15 @@ function ElementFormDialog({
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
+  const heroVideos: Video[] = heroVideosQuery.data?.data ?? [];
+
   const onSubmit = (data: any) => {
-    const payload = { ...data, imageUrl };
+    const payload: Record<string, unknown> = { ...data, imageUrl };
+    if (type === "HERO") {
+      payload.items = heroVideoId
+        ? [{ videoId: heroVideoId, sortOrder: 0 }]
+        : [];
+    }
     if (isEdit) updateMutation.mutate(payload);
     else createMutation.mutate(payload);
   };
@@ -724,6 +754,32 @@ function ElementFormDialog({
                     {...register("subtitle")}
                     placeholder="Optional subtitle"
                   />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-surface-300">
+                    Play button video
+                  </label>
+                  <p className="mb-2 text-xs text-surface-500">
+                    Optional. Super admins see all videos; channel admins only see
+                    videos for channels they manage.
+                  </p>
+                  {heroVideosQuery.isLoading ? (
+                    <Spinner size="sm" />
+                  ) : (
+                    <select
+                      className="w-full rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-white"
+                      value={heroVideoId}
+                      onChange={(e) => setHeroVideoId(e.target.value)}
+                    >
+                      <option value="">None</option>
+                      {heroVideos.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.title}
+                          {v.channel?.name ? ` — ${v.channel.name}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-surface-300">
@@ -854,7 +910,7 @@ function ContentRowFormDialog({
 
   const videosQuery = useQuery({
     queryKey: ["admin", "videos", "picker-all"],
-    queryFn: () => adminListVideos({ perPage: 200 }),
+    queryFn: () => adminListVideos({ perPage: 250 }),
   });
 
   const createMutation = useMutation({

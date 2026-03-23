@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../middleware/auth";
+import { authenticate, optionalAuth } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import * as videoController from "../controllers/videoController";
 
@@ -10,13 +10,13 @@ const adminAuth = [
   requireRole("SUPER_ADMIN", "CHANNEL_ADMIN", "CREATOR_ADMIN"),
 ];
 
-router.get("/", videoController.list);
+router.get("/", optionalAuth, videoController.list);
 router.get(
   "/:id/preview-playback",
   ...adminAuth,
   videoController.getAdminPreviewPlayback,
 );
-router.get("/:idOrSlug", videoController.getByIdOrSlug);
+router.get("/:idOrSlug", optionalAuth, videoController.getByIdOrSlug);
 
 router.post("/bulk-delete", ...adminAuth, videoController.bulkRemove);
 router.post("/", ...adminAuth, videoController.create);

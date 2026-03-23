@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Play,
@@ -24,6 +24,8 @@ import type { Video } from "@/types";
 
 export default function VideoPage() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const bouncedFromWatch = searchParams.get("needsAccess") === "1";
   const { isAuthenticated } = useAuth();
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
 
@@ -72,7 +74,9 @@ export default function VideoPage() {
   }
 
   const playbackId = video.videoAssets?.[0]?.muxPlaybackId ?? null;
-  const hasPlaybackAccess = video.isFree || video.freeWithAds || isAuthenticated;
+  const hasPlaybackAccess =
+    video.playbackAllowed ??
+    (video.isFree || video.freeWithAds || isAuthenticated);
   const canPlay = !!playbackId && hasPlaybackAccess;
 
   const thumbnailUrl =
@@ -129,6 +133,12 @@ export default function VideoPage() {
 
   return (
     <div className="bg-surface-950">
+      {bouncedFromWatch && (
+        <div className="border-b border-primary-900/50 bg-primary-950/50 px-4 py-3 text-center text-sm text-primary-100 sm:px-6">
+          Sign in, subscribe, or rent to watch this video — subscription and
+          purchase options are below.
+        </div>
+      )}
       {/* Hero poster area */}
       <div className="relative">
         <div className="aspect-[21/9] max-h-[500px] w-full bg-surface-900">
@@ -200,9 +210,17 @@ export default function VideoPage() {
                     </Link>
                   </Button>
                 ) : (
-                  <Button size="lg" disabled>
-                    <Lock className="h-5 w-5" />
-                    Subscribe to Watch
+                  <Button size="lg" asChild>
+                    <Link
+                      to={
+                        video.channel
+                          ? `/channels/${video.channel.slug}`
+                          : "/signup"
+                      }
+                    >
+                      <Lock className="h-5 w-5" />
+                      Subscribe to watch
+                    </Link>
                   </Button>
                 )}
               </div>
@@ -246,28 +264,32 @@ export default function VideoPage() {
 
           {/* Sidebar - access options */}
           <div className="space-y-4">
-            {!video.isFree && !video.freeWithAds && !isAuthenticated && (
-              <div className="rounded-xl border border-surface-800 bg-surface-900 p-5">
-                <h3 className="mb-3 font-semibold text-white">
-                  Get Access
-                </h3>
-                <p className="mb-4 text-sm text-surface-400">
-                  Subscribe to {video.channel?.name ?? "this channel"} to watch
-                  this and more.
-                </p>
-                <Button className="w-full" asChild>
-                  <Link
-                    to={
-                      video.channel
-                        ? `/channels/${video.channel.slug}`
-                        : "/signup"
-                    }
-                  >
-                    View Plans
-                  </Link>
-                </Button>
-              </div>
-            )}
+            {!video.isFree &&
+              !video.freeWithAds &&
+              (video.playbackAllowed === false ||
+                (video.playbackAllowed === undefined &&
+                  !isAuthenticated)) && (
+                <div className="rounded-xl border border-surface-800 bg-surface-900 p-5">
+                  <h3 className="mb-3 font-semibold text-white">
+                    Get Access
+                  </h3>
+                  <p className="mb-4 text-sm text-surface-400">
+                    Subscribe to {video.channel?.name ?? "this channel"} to watch
+                    this and more.
+                  </p>
+                  <Button className="w-full" asChild>
+                    <Link
+                      to={
+                        video.channel
+                          ? `/channels/${video.channel.slug}`
+                          : "/signup"
+                      }
+                    >
+                      View Plans
+                    </Link>
+                  </Button>
+                </div>
+              )}
 
             {rentalOption && (
               <div className="rounded-xl border border-surface-800 bg-surface-900 p-5">

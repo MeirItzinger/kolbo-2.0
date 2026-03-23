@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Play, Tv } from "lucide-react";
 import { getHomepageElements } from "@/api/landing";
+import { resolveUploadedAssetUrl } from "@/api/client";
 import { listChannels } from "@/api/channels";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -116,11 +117,20 @@ function DefaultHero() {
 // ── Hero Section ─────────────────────────────────────────────────
 
 function HeroSection({ element }: { element: HomepageElement }) {
+  const linked =
+    (element.items ?? [])
+      .map((item) => item.video)
+      .find((v): v is Video => !!v && !!v.slug) ?? null;
+
+  const imgSrc = element.imageUrl
+    ? resolveUploadedAssetUrl(element.imageUrl)
+    : null;
+
   return (
     <section className="relative min-h-[420px] sm:min-h-[520px]">
-      {element.imageUrl ? (
+      {imgSrc ? (
         <img
-          src={element.imageUrl}
+          src={imgSrc}
           alt={element.title ?? ""}
           className="absolute inset-0 h-full w-full object-cover"
         />
@@ -136,12 +146,21 @@ function HeroSection({ element }: { element: HomepageElement }) {
           {element.subtitle && (
             <p className="mt-4 text-lg text-surface-300">{element.subtitle}</p>
           )}
-          <Button size="lg" className="mt-6" asChild>
-            <Link to="/signup">
-              Start Watching
-              <Play className="h-4 w-4" />
-            </Link>
-          </Button>
+          {linked ? (
+            <Button size="lg" className="mt-6 gap-2" asChild>
+              <Link to={`/watch/${linked.slug}`}>
+                Watch now
+                <Play className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button size="lg" className="mt-6" asChild>
+              <Link to="/signup">
+                Start Watching
+                <Play className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
     </section>

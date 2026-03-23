@@ -4,9 +4,48 @@ import { ApiError } from "../utils/apiError";
 import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
 import { syncMuxAssetOnDemand, createSignedPlaybackToken } from "../services/mux/muxService";
+import { checkAccess } from "../services/access/accessService";
 import type { Prisma } from "@prisma/client";
 
 type DbClient = Prisma.TransactionClient;
+
+/**
+ * When a CHANNEL_ADMIN or CREATOR_ADMIN lists videos with a Bearer token,
+ * restrict results to videos they manage. SUPER_ADMIN and unauthenticated
+ * requests are unchanged (public catalog).
+ */
+function staffVideoListScope(
+  user: NonNullable<Request["user"]>,
+): Prisma.VideoWhereInput | null {
+  const isSuper = user.roles.some((r) => r.key === "SUPER_ADMIN");
+  if (isSuper) return null;
+
+  const hasChannelAdmin = user.roles.some((r) => r.key === "CHANNEL_ADMIN");
+  const hasCreatorAdmin = user.roles.some((r) => r.key === "CREATOR_ADMIN");
+  if (!hasChannelAdmin && !hasCreatorAdmin) return null;
+
+  const channelIds = [
+    ...new Set(
+      user.roles
+        .filter((r) => r.key === "CHANNEL_ADMIN" && r.channelId)
+        .map((r) => r.channelId!),
+    ),
+  ];
+  const creatorProfileIds = [
+    ...new Set(
+      user.roles
+        .filter((r) => r.key === "CREATOR_ADMIN" && r.creatorProfileId)
+        .map((r) => r.creatorProfileId!),
+    ),
+  ];
+
+  const or: Prisma.VideoWhereInput[] = [];
+  if (channelIds.length) or.push({ channelId: { in: channelIds } });
+  if (creatorProfileIds.length)
+    or.push({ creatorProfileId: { in: creatorProfileIds } });
+  if (or.length === 0) return null;
+  return { OR: or };
+}
 
 /** Categories on a video (many-to-many via VideoCategory). */
 const videoCategoryInclude = {
@@ -214,12 +253,13 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     search,
     sortBy = "createdAt",
     order = "desc",
+    forAdmin,
   } = req.query;
 
-  const take = Math.min(Number(limit) || 20, 100);
+  const take = Math.min(Number(limit) || 20, 250);
   const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
 
-  const where: Prisma.VideoWhereInput = {};
+  let where: Prisma.VideoWhereInput = {};
   if (channelId) where.channelId = channelId as string;
   if (creatorProfileId) where.creatorProfileId = creatorProfileId as string;
   if (status) where.status = status as any;
@@ -230,6 +270,19 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
       { title: { contains: search as string, mode: "insensitive" } },
       { description: { contains: search as string, mode: "insensitive" } },
     ];
+  }
+
+  const adminListRequest =
+    forAdmin === "true" || forAdmin === "1";
+  const staffScope =
+    adminListRequest && req.user
+      ? staffVideoListScope(req.user)
+      : null;
+  if (staffScope) {
+    const parts: Prisma.VideoWhereInput[] = [];
+    if (Object.keys(where).length > 0) parts.push(where);
+    parts.push(staffScope);
+    where = parts.length === 1 ? staffScope : { AND: parts };
   }
 
   const allowedSortFields = ["createdAt", "title", "publishedAt", "durationSeconds"];
@@ -320,9 +373,17 @@ export const getByIdOrSlug = asyncHandler(
       }
     }
 
+    const access = await checkAccess(req.user?.id ?? null, video.id);
+    const payload = attachCategoriesToVideo(
+      video as unknown as Record<string, unknown>,
+    ) as Record<string, unknown>;
+
     res.json({
       status: "success",
-      data: attachCategoriesToVideo(video as unknown as Record<string, unknown>),
+      data: {
+        ...payload,
+        playbackAllowed: access.allowed,
+      },
     });
   }
 );

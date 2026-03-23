@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { getVideo } from "@/api/videos";
@@ -148,17 +148,28 @@ export default function WatchPage() {
   }
 
   if (tokenQuery.isError) {
+    const forbidden =
+      axios.isAxiosError(tokenQuery.error) &&
+      tokenQuery.error.response?.status === 403;
+    if (forbidden) {
+      return (
+        <Navigate
+          to={`/videos/${video.slug}?needsAccess=1`}
+          replace
+        />
+      );
+    }
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-black px-4">
-        <AlertTriangle className="mb-4 h-12 w-12 text-destructive" />
+        <AlertTriangle className="mb-4 h-12 w-12 text-warning" />
         <h2 className="mb-2 text-xl font-semibold text-white">
-          Access denied
+          Playback unavailable
         </h2>
-        <p className="mb-6 text-surface-400">
-          You don&apos;t have access to this video.
+        <p className="mb-6 text-center text-surface-400">
+          Could not start playback. Try again from the video page.
         </p>
         <Button asChild>
-          <Link to={`/videos/${video.slug}`}>Back to Details</Link>
+          <Link to={`/videos/${video.slug}`}>Back to video</Link>
         </Button>
       </div>
     );
