@@ -8,7 +8,7 @@ const router = Router();
 router.post(
   "/direct-upload",
   authenticate,
-  requireRole("SUPER_ADMIN", "CHANNEL_ADMIN"),
+  requireRole("SUPER_ADMIN", "CHANNEL_ADMIN", "CREATOR_ADMIN"),
   muxController.createUpload
 );
 

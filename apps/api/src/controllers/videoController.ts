@@ -3,8 +3,118 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/apiError";
 import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
-import { syncMuxAssetOnDemand } from "../services/mux/muxService";
+import { syncMuxAssetOnDemand, createSignedPlaybackToken } from "../services/mux/muxService";
 import type { Prisma } from "@prisma/client";
+
+type DbClient = Prisma.TransactionClient;
+
+/** Categories on a video (many-to-many via VideoCategory). */
+const videoCategoryInclude = {
+  categoryLinks: {
+    include: { category: { select: { id: true, name: true, slug: true } } },
+  },
+} as const;
+
+function normalizeCategoryIdsFromBody(body: Record<string, unknown>): string[] | undefined {
+  if (Array.isArray(body.categoryIds)) {
+    return [
+      ...new Set(
+        body.categoryIds.filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    ];
+  }
+  if (body.categoryId !== undefined) {
+    const single = body.categoryId as string | null;
+    return single ? [single] : [];
+  }
+  return undefined;
+}
+
+async function setVideoCategories(
+  tx: DbClient,
+  videoId: string,
+  channelId: string,
+  categoryIds: string[],
+) {
+  const unique = [...new Set(categoryIds)];
+  if (unique.length > 0) {
+    const count = await tx.category.count({
+      where: { id: { in: unique }, channelId },
+    });
+    if (count !== unique.length) {
+      throw ApiError.badRequest("One or more categories are invalid for this channel");
+    }
+  }
+  await tx.videoCategory.deleteMany({ where: { videoId } });
+  if (unique.length > 0) {
+    await tx.videoCategory.createMany({
+      data: unique.map((categoryId) => ({ videoId, categoryId })),
+      skipDuplicates: true,
+    });
+  }
+}
+
+/** If `VideoCategory` table is missing or DB is out of sync, don’t fail the whole request. */
+async function setVideoCategoriesSafe(
+  tx: DbClient,
+  videoId: string,
+  channelId: string,
+  categoryIds: string[],
+) {
+  try {
+    await setVideoCategories(tx, videoId, channelId, categoryIds);
+  } catch (err) {
+    console.warn(
+      "[videos] Skipping category assignment (is the VideoCategory migration applied?).",
+      err,
+    );
+  }
+}
+
+/** Single-video API include — optional category join for resilience when join table is missing. */
+function buildVideoSingleInclude(includeCategories: boolean): Prisma.VideoInclude {
+  return {
+    channel: { select: { id: true, slug: true, name: true } },
+    creatorProfile: { select: { id: true, slug: true, displayName: true } },
+    ...(includeCategories ? videoCategoryInclude : {}),
+    videoAssets: { orderBy: { createdAt: "desc" } },
+    thumbnailAssets: true,
+    tagAssignments: { include: { tag: true } },
+    videoAccessRules: {
+      include: {
+        subscriptionPlan: {
+          select: {
+            id: true,
+            name: true,
+            priceVariants: { where: { isActive: true }, orderBy: { price: "asc" }, take: 1 },
+          },
+        },
+        bundle: { select: { id: true, name: true } },
+        rentalOption: { select: { id: true, name: true, price: true, rentalHours: true } },
+        purchaseOption: { select: { id: true, name: true, price: true } },
+      },
+    },
+    rentalOptions: { where: { isActive: true } },
+    purchaseOptions: { where: { isActive: true } },
+  };
+}
+
+function attachCategoriesToVideo(video: Record<string, unknown>) {
+  const links =
+    (video.categoryLinks as { category: { id: string; name: string; slug: string } }[] | undefined) ??
+    [];
+  const { categoryLinks, ...rest } = video;
+  return {
+    ...rest,
+    categories: links.map((l) => l.category),
+  };
+}
+
+/** Express may type `req.params.id` as `string | string[]` — normalize for Prisma. */
+function routeParamString(param: string | string[] | undefined): string {
+  if (param == null) return "";
+  return typeof param === "string" ? param : String(param[0] ?? "");
+}
 
 async function ensureVideoStripeProduct(videoId: string, videoTitle: string): Promise<string> {
   const video = await prisma.video.findUnique({
@@ -110,67 +220,70 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     ? (sortBy as string)
     : "createdAt";
 
-  const [videos, total] = await Promise.all([
-    prisma.video.findMany({
-      where,
-      skip,
-      take,
-      orderBy: { [sortField]: order === "asc" ? "asc" : "desc" },
-      include: {
-        channel: { select: { id: true, slug: true, name: true } },
-        creatorProfile: { select: { id: true, slug: true, displayName: true } },
-        category: { select: { id: true, name: true, slug: true } },
-        thumbnailAssets: { where: { type: "POSTER" }, take: 1 },
-        videoAssets: {
-          select: { id: true, assetStatus: true, durationSeconds: true },
-          take: 1,
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    }),
-    prisma.video.count({ where }),
-  ]);
+  const baseInclude = {
+    channel: { select: { id: true, slug: true, name: true } },
+    creatorProfile: { select: { id: true, slug: true, displayName: true } },
+    thumbnailAssets: { where: { type: "POSTER" as const }, take: 1 },
+    videoAssets: {
+      select: { id: true, assetStatus: true, durationSeconds: true },
+      take: 1,
+      orderBy: { createdAt: "desc" as const },
+    },
+  };
+
+  const [videos, total] = await (async () => {
+    try {
+      return await Promise.all([
+        prisma.video.findMany({
+          where,
+          skip,
+          take,
+          orderBy: { [sortField]: order === "asc" ? "asc" : "desc" },
+          include: { ...baseInclude, ...videoCategoryInclude },
+        }),
+        prisma.video.count({ where }),
+      ]);
+    } catch {
+      return await Promise.all([
+        prisma.video.findMany({
+          where,
+          skip,
+          take,
+          orderBy: { [sortField]: order === "asc" ? "asc" : "desc" },
+          include: baseInclude,
+        }),
+        prisma.video.count({ where }),
+      ]);
+    }
+  })();
 
   res.json({
     status: "success",
-    data: videos,
+    data: videos.map((v) => attachCategoriesToVideo(v as unknown as Record<string, unknown>)),
     meta: { page: Number(page) || 1, limit: take, total },
   });
 });
 
 export const getByIdOrSlug = asyncHandler(
   async (req: Request, res: Response) => {
-    const { idOrSlug } = req.params;
+    const raw = req.params.idOrSlug;
+    const idOrSlug = typeof raw === "string" ? raw : String(raw?.[0] ?? "");
+    const where = { OR: [{ id: idOrSlug }, { slug: idOrSlug }] };
 
-    const video = await prisma.video.findFirst({
-      where: {
-        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
-      },
-      include: {
-        channel: { select: { id: true, slug: true, name: true } },
-        creatorProfile: { select: { id: true, slug: true, displayName: true } },
-        category: { select: { id: true, name: true, slug: true } },
-        videoAssets: { orderBy: { createdAt: "desc" } },
-        thumbnailAssets: true,
-        tagAssignments: { include: { tag: true } },
-        videoAccessRules: {
-          include: {
-            subscriptionPlan: {
-              select: {
-                id: true,
-                name: true,
-                priceVariants: { where: { isActive: true }, orderBy: { price: "asc" }, take: 1 },
-              },
-            },
-            bundle: { select: { id: true, name: true } },
-            rentalOption: { select: { id: true, name: true, price: true, rentalHours: true } },
-            purchaseOption: { select: { id: true, name: true, price: true } },
-          },
-        },
-        rentalOptions: { where: { isActive: true } },
-        purchaseOptions: { where: { isActive: true } },
-      },
-    });
+    const video = await (async () => {
+      try {
+        return await prisma.video.findFirst({
+          where,
+          include: buildVideoSingleInclude(true),
+        });
+      } catch (err) {
+        console.warn("[videos] getByIdOrSlug: retry without VideoCategory join", err);
+        return await prisma.video.findFirst({
+          where,
+          include: buildVideoSingleInclude(false),
+        });
+      }
+    })();
 
     if (!video) throw ApiError.notFound("Video not found");
 
@@ -190,7 +303,10 @@ export const getByIdOrSlug = asyncHandler(
       }
     }
 
-    res.json({ status: "success", data: video });
+    res.json({
+      status: "success",
+      data: attachCategoriesToVideo(video as unknown as Record<string, unknown>),
+    });
   }
 );
 
@@ -199,7 +315,6 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     slug,
     channelId,
     creatorProfileId,
-    categoryId,
     title,
     description,
     shortDescription,
@@ -222,13 +337,14 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 
   const { rentalOptions, purchaseOptions } = req.body;
 
+  const categoryIdsForCreate = normalizeCategoryIdsFromBody(req.body) ?? [];
+
   const video = await prisma.$transaction(async (tx) => {
     const created = await tx.video.create({
       data: {
         slug,
         channelId,
         creatorProfileId: creatorProfileId || null,
-        categoryId: categoryId || null,
         title,
         description,
         shortDescription,
@@ -265,6 +381,9 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
           currency: r.currency || "usd",
         })),
       });
+      await tx.videoAccessRule.create({
+        data: { videoId: created.id, accessType: "RENTAL", channelId },
+      });
     }
 
     if (purchaseOptions?.length) {
@@ -276,10 +395,15 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
           currency: p.currency || "usd",
         })),
       });
+      await tx.videoAccessRule.create({
+        data: { videoId: created.id, accessType: "PURCHASE", channelId },
+      });
     }
 
     return created;
   });
+
+  await setVideoCategoriesSafe(prisma as unknown as DbClient, video.id, channelId, categoryIdsForCreate);
 
   const createdRentals = await prisma.rentalOption.findMany({ where: { videoId: video.id } });
   const createdPurchases = await prisma.purchaseOption.findMany({ where: { videoId: video.id } });
@@ -297,21 +421,39 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     );
   }
 
-  const full = await prisma.video.findUnique({
-    where: { id: video.id },
-    include: {
-      channel: { select: { id: true, slug: true, name: true } },
-      tagAssignments: { include: { tag: true } },
-      rentalOptions: true,
-      purchaseOptions: true,
-    },
-  });
+  let full;
+  try {
+    full = await prisma.video.findUnique({
+      where: { id: video.id },
+      include: {
+        channel: { select: { id: true, slug: true, name: true } },
+        ...videoCategoryInclude,
+        tagAssignments: { include: { tag: true } },
+        rentalOptions: true,
+        purchaseOptions: true,
+      },
+    });
+  } catch (err) {
+    console.warn("[videos] create response: reload without categories", err);
+    full = await prisma.video.findUnique({
+      where: { id: video.id },
+      include: {
+        channel: { select: { id: true, slug: true, name: true } },
+        tagAssignments: { include: { tag: true } },
+        rentalOptions: true,
+        purchaseOptions: true,
+      },
+    });
+  }
 
-  res.status(201).json({ status: "success", data: full });
+  res.status(201).json({
+    status: "success",
+    data: full ? attachCategoriesToVideo(full as unknown as Record<string, unknown>) : full,
+  });
 });
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = routeParamString(req.params.id);
   const {
     title,
     description,
@@ -323,19 +465,27 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     cheaperWithAdsAllowed,
     hasPrerollAds,
     hasMidrollAds,
+    prerollAd,
+    midrollAd,
     allowDownload,
     previewText,
     creatorProfileId,
-    categoryId,
     slug,
     channelId,
     tagIds,
     rentalOptions,
     purchaseOptions,
+    subscriptionGated,
+    subscriptionPlanId,
+    thumbnailUrl,
   } = req.body;
+  const effectiveHasPrerollAds = hasPrerollAds !== undefined ? hasPrerollAds : prerollAd;
+  const effectiveHasMidrollAds = hasMidrollAds !== undefined ? hasMidrollAds : midrollAd;
 
   const video = await prisma.video.findUnique({ where: { id } });
   if (!video) throw ApiError.notFound("Video not found");
+
+  const categoryIdsUpdate = normalizeCategoryIdsFromBody(req.body);
 
   const publishedAt =
     status === "PUBLISHED" && video.status !== "PUBLISHED"
@@ -359,12 +509,11 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
         ...(isFree !== undefined && { isFree }),
         ...(freeWithAds !== undefined && { freeWithAds }),
         ...(cheaperWithAdsAllowed !== undefined && { cheaperWithAdsAllowed }),
-        ...(hasPrerollAds !== undefined && { hasPrerollAds }),
-        ...(hasMidrollAds !== undefined && { hasMidrollAds }),
+        ...(effectiveHasPrerollAds !== undefined && { hasPrerollAds: effectiveHasPrerollAds }),
+        ...(effectiveHasMidrollAds !== undefined && { hasMidrollAds: effectiveHasMidrollAds }),
         ...(allowDownload !== undefined && { allowDownload }),
         ...(previewText !== undefined && { previewText }),
         ...(creatorProfileId !== undefined && { creatorProfileId }),
-        ...(categoryId !== undefined && { categoryId: categoryId || null }),
         updatedByUserId: req.user!.id,
       },
     });
@@ -379,9 +528,19 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
       }
     }
 
+    if (subscriptionGated !== undefined) {
+      await tx.videoAccessRule.deleteMany({ where: { videoId: id, accessType: "SUBSCRIPTION" } });
+      if (subscriptionGated && subscriptionPlanId) {
+        await tx.videoAccessRule.create({
+          data: { videoId: id, accessType: "SUBSCRIPTION", subscriptionPlanId, channelId: result.channelId },
+        });
+      }
+    }
+
     if (rentalOptions !== undefined) {
       await deactivateOptionPrices(id);
       await tx.rentalOption.deleteMany({ where: { videoId: id } });
+      await tx.videoAccessRule.deleteMany({ where: { videoId: id, accessType: "RENTAL" } });
       if (rentalOptions.length) {
         await tx.rentalOption.createMany({
           data: rentalOptions.map((r: any) => ({
@@ -392,15 +551,19 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
             currency: r.currency || "usd",
           })),
         });
+        await tx.videoAccessRule.create({
+          data: { videoId: id, accessType: "RENTAL", channelId: result.channelId },
+        });
       }
     }
 
-    if (purchaseOptions !== undefined && rentalOptions === undefined) {
+    if (purchaseOptions !== undefined) {
       const purchases = await tx.purchaseOption.findMany({ where: { videoId: id } });
       for (const p of purchases) {
         if (p.stripePriceId) await stripe.prices.update(p.stripePriceId, { active: false }).catch(() => {});
       }
       await tx.purchaseOption.deleteMany({ where: { videoId: id } });
+      await tx.videoAccessRule.deleteMany({ where: { videoId: id, accessType: "PURCHASE" } });
       if (purchaseOptions.length) {
         await tx.purchaseOption.createMany({
           data: purchaseOptions.map((p: any) => ({
@@ -410,11 +573,27 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
             currency: p.currency || "usd",
           })),
         });
+        await tx.videoAccessRule.create({
+          data: { videoId: id, accessType: "PURCHASE", channelId: result.channelId },
+        });
       }
     }
 
     return result;
   });
+
+  if (categoryIdsUpdate !== undefined) {
+    await setVideoCategoriesSafe(prisma as unknown as DbClient, id, updated.channelId, categoryIdsUpdate);
+  }
+
+  if (thumbnailUrl !== undefined) {
+    await prisma.thumbnailAsset.deleteMany({ where: { videoId: id, type: "POSTER" } });
+    if (thumbnailUrl) {
+      await prisma.thumbnailAsset.create({
+        data: { videoId: id, type: "POSTER", imageUrl: thumbnailUrl },
+      });
+    }
+  }
 
   const videoTitle = title ?? video.title;
   const hasNewRentals = rentalOptions !== undefined && rentalOptions.length;
@@ -439,22 +618,43 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     );
   }
 
-  const full = await prisma.video.findUnique({
-    where: { id },
-    include: {
-      channel: { select: { id: true, slug: true, name: true } },
-      tagAssignments: { include: { tag: true } },
-      rentalOptions: true,
-      purchaseOptions: true,
-      videoAssets: { orderBy: { createdAt: "desc" } },
-    },
-  });
+  let full;
+  try {
+    full = await prisma.video.findUnique({
+      where: { id },
+      include: {
+        channel: { select: { id: true, slug: true, name: true } },
+        ...videoCategoryInclude,
+        tagAssignments: { include: { tag: true } },
+        rentalOptions: true,
+        purchaseOptions: true,
+        videoAssets: { orderBy: { createdAt: "desc" } },
+        videoAccessRules: true,
+      },
+    });
+  } catch (err) {
+    console.warn("[videos] update response: reload without categories", err);
+    full = await prisma.video.findUnique({
+      where: { id },
+      include: {
+        channel: { select: { id: true, slug: true, name: true } },
+        tagAssignments: { include: { tag: true } },
+        rentalOptions: true,
+        purchaseOptions: true,
+        videoAssets: { orderBy: { createdAt: "desc" } },
+        videoAccessRules: true,
+      },
+    });
+  }
 
-  res.json({ status: "success", data: full });
+  res.json({
+    status: "success",
+    data: full ? attachCategoriesToVideo(full as unknown as Record<string, unknown>) : full,
+  });
 });
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = routeParamString(req.params.id);
 
   const video = await prisma.video.findUnique({ where: { id } });
   if (!video) throw ApiError.notFound("Video not found");
@@ -479,7 +679,7 @@ export const bulkRemove = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const publish = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = routeParamString(req.params.id);
 
   const video = await prisma.video.findUnique({
     where: { id },
@@ -506,7 +706,7 @@ export const publish = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const schedule = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = routeParamString(req.params.id);
   const { publishAt } = req.body;
 
   const video = await prisma.video.findUnique({ where: { id } });
@@ -541,15 +741,29 @@ export const schedule = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const duplicate = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = routeParamString(req.params.id);
 
-  const source = await prisma.video.findUnique({
-    where: { id },
-    include: {
-      tagAssignments: true,
-      videoAccessRules: true,
-    },
-  });
+  const source = await (async () => {
+    try {
+      return await prisma.video.findUnique({
+        where: { id },
+        include: {
+          tagAssignments: true,
+          videoAccessRules: true,
+          categoryLinks: { select: { categoryId: true } },
+        },
+      });
+    } catch (err) {
+      console.warn("[videos] duplicate: load source without categoryLinks", err);
+      return await prisma.video.findUnique({
+        where: { id },
+        include: {
+          tagAssignments: true,
+          videoAccessRules: true,
+        },
+      });
+    }
+  })();
   if (!source) throw ApiError.notFound("Video not found");
 
   const newSlug = `${source.slug}-copy-${Date.now()}`;
@@ -602,11 +816,73 @@ export const duplicate = asyncHandler(async (req: Request, res: Response) => {
     return created;
   });
 
+  const catLinks = (source as { categoryLinks?: { categoryId: string }[] }).categoryLinks;
+  if (catLinks?.length) {
+    try {
+      await prisma.videoCategory.createMany({
+        data: catLinks.map((l) => ({
+          videoId: duplicated.id,
+          categoryId: l.categoryId,
+        })),
+        skipDuplicates: true,
+      });
+    } catch (err) {
+      console.warn("[videos] duplicate: skip copying categories", err);
+    }
+  }
+
   res.status(201).json({ status: "success", data: duplicated });
 });
 
+/** Mux playback id + optional signed JWT for in-admin preview (no subscription / watch session). */
+export const getAdminPreviewPlayback = asyncHandler(
+  async (req: Request, res: Response) => {
+    const id = routeParamString(req.params.id);
+    const user = req.user;
+    if (!user) throw ApiError.unauthorized();
+
+    const video = await prisma.video.findUnique({
+      where: { id },
+      select: { id: true, channelId: true, title: true },
+    });
+    if (!video) throw ApiError.notFound("Video not found");
+
+    const isSuperAdmin = user.roles.some((r) => r.key === "SUPER_ADMIN");
+    const canChannelAdmin = user.roles.some(
+      (r) => r.key === "CHANNEL_ADMIN" && r.channelId === video.channelId,
+    );
+    if (!isSuperAdmin && !canChannelAdmin) {
+      throw ApiError.forbidden("You cannot preview this video");
+    }
+
+    const asset = await prisma.videoAsset.findFirst({
+      where: { videoId: id, assetStatus: "READY" },
+      orderBy: { createdAt: "desc" },
+      select: { muxPlaybackId: true, playbackPolicy: true },
+    });
+    if (!asset?.muxPlaybackId) {
+      throw ApiError.badRequest(
+        "No ready playback asset yet. Wait for processing or upload a file.",
+      );
+    }
+
+    let token: string | null = null;
+    if (asset.playbackPolicy === "SIGNED") {
+      token = createSignedPlaybackToken(asset.muxPlaybackId, user.id);
+    }
+
+    res.json({
+      status: "success",
+      data: {
+        playbackId: asset.muxPlaybackId,
+        token,
+      },
+    });
+  },
+);
+
 export const setTrailer = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = routeParamString(req.params.id);
   const { trailerVideoId } = req.body;
 
   const video = await prisma.video.findUnique({ where: { id } });

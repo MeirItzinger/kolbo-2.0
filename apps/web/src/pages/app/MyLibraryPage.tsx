@@ -1,17 +1,22 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Library, Film, Play } from "lucide-react";
-import { getWatchHistory, getPurchases, getRentals } from "@/api/account";
+import { Library, Film, Play, CreditCard } from "lucide-react";
+import { getWatchHistory, getPurchases, getRentals, getSubscriptions } from "@/api/account";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, formatCurrency } from "@/lib/utils";
 
-type Tab = "continue" | "purchases" | "rentals";
+type Tab = "subscriptions" | "continue" | "purchases" | "rentals";
 
 export default function MyLibraryPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("continue");
+  const [activeTab, setActiveTab] = useState<Tab>("subscriptions");
+
+  const subscriptionsQuery = useQuery({
+    queryKey: ["account", "subscriptions"],
+    queryFn: getSubscriptions,
+  });
 
   const historyQuery = useQuery({
     queryKey: ["account", "watch-history"],
@@ -28,6 +33,13 @@ export default function MyLibraryPage() {
     queryFn: () => getRentals({ perPage: 50 }),
   });
 
+  const allSubs = [
+    ...(subscriptionsQuery.data?.channelSubscriptions ?? []),
+    ...(subscriptionsQuery.data?.bundleSubscriptions ?? []),
+  ];
+  const subscriptions = allSubs.filter(
+    (s: any) => s.status === "ACTIVE" || s.status === "TRIALING",
+  );
   const continueItems = (historyQuery.data?.data ?? []).filter(
     (h) => !h.completed,
   );
@@ -35,11 +47,13 @@ export default function MyLibraryPage() {
   const rentals = rentalsQuery.data?.data ?? [];
 
   const isLoading =
+    subscriptionsQuery.isLoading ||
     historyQuery.isLoading ||
     purchasesQuery.isLoading ||
     rentalsQuery.isLoading;
 
   const tabs: { key: Tab; label: string; count: number }[] = [
+    { key: "subscriptions", label: "Subscriptions", count: subscriptions.length },
     { key: "continue", label: "Continue Watching", count: continueItems.length },
     { key: "purchases", label: "Purchases", count: purchases.length },
     { key: "rentals", label: "Rentals", count: rentals.length },
@@ -79,6 +93,62 @@ export default function MyLibraryPage() {
         </div>
       ) : (
         <>
+          {activeTab === "subscriptions" &&
+            (subscriptions.length > 0 ? (
+              <div className="space-y-3">
+                {subscriptions.map((s: any) => {
+                  const channelName = s.channel?.name ?? s.subscriptionPlan?.name ?? "Subscription";
+                  const channelSlug = s.channel?.slug;
+                  const planName = s.subscriptionPlan?.name ?? "";
+                  const price = s.priceVariant?.price ?? s.subscriptionPlan?.price ?? null;
+                  const interval = s.priceVariant?.billingInterval === "YEARLY" ? "/yr" : "/mo";
+                  const renewsAt = s.currentPeriodEnd ?? s.renewsAt ?? null;
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between rounded-xl border border-surface-800 bg-surface-900 p-4"
+                    >
+                      <div className="flex items-center gap-4">
+                        {s.channel?.logoUrl ? (
+                          <img src={s.channel.logoUrl} alt={channelName} className="h-12 w-12 rounded-lg object-cover" />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-surface-800">
+                            <CreditCard className="h-6 w-6 text-surface-500" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-white">{channelName}</p>
+                          {planName && <p className="text-sm text-surface-400">{planName}</p>}
+                          {renewsAt && (
+                            <p className="text-xs text-surface-500">Renews {formatDate(renewsAt)}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {price != null && (
+                          <span className="text-sm font-medium text-white">
+                            {formatCurrency(Number(price))}{interval}
+                          </span>
+                        )}
+                        <Badge variant="success">{s.status === "TRIALING" ? "Trial" : "Active"}</Badge>
+                        {channelSlug && (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link to={`/channels/${channelSlug}`}>Watch</Link>
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState
+                icon={CreditCard}
+                title="No active subscriptions"
+                subtitle="Subscribe to a channel to get access to all their content."
+              />
+            ))}
+
           {activeTab === "continue" &&
             (continueItems.length > 0 ? (
               <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -163,7 +233,7 @@ export default function MyLibraryPage() {
                         {p.video?.title ?? "Video"}
                       </h3>
                       <p className="mt-0.5 text-xs text-surface-500">
-                        Purchased {formatDate(p.createdAt)}
+                        Purchased {p.purchasedAt ? formatDate(p.purchasedAt) : ""}
                       </p>
                     </div>
                   </Link>
@@ -182,7 +252,7 @@ export default function MyLibraryPage() {
               <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {rentals.map((r) => {
                   const active =
-                    r.expiresAt && new Date(r.expiresAt) > new Date();
+                    r.accessEndsAt && new Date(r.accessEndsAt) > new Date();
                   return (
                     <Link
                       key={r.id}
@@ -218,8 +288,8 @@ export default function MyLibraryPage() {
                           {r.video?.title ?? "Video"}
                         </h3>
                         <p className="mt-0.5 text-xs text-surface-500">
-                          {active && r.expiresAt
-                            ? `Expires ${formatDate(r.expiresAt)}`
+                          {active && r.accessEndsAt
+                            ? `Expires ${formatDate(r.accessEndsAt)}`
                             : "Expired"}
                         </p>
                       </div>

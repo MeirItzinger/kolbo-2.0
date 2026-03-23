@@ -171,6 +171,30 @@ enum AccessSourceType {
   PURCHASE
 }
 
+enum CampaignStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  ACTIVE
+  PAUSED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum GeoTargetType {
+  CITY
+  ZIP_CODE
+}
+
+enum AdCreativeStatus {
+  CREATED
+  UPLOADED
+  PROCESSING
+  READY
+  ERRORED
+}
+
 // ─── AUTH / USERS ────────────────────────────────────────
 
 model User {
@@ -348,14 +372,16 @@ model Channel {
 }
 
 model CreatorProfile {
-  id          String   @id @default(cuid())
-  slug        String   @unique
-  displayName String
-  bio         String?
-  avatarUrl   String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  slug                   String   @unique
+  displayName            String
+  bio                    String?
+  avatarUrl              String?
+  isActive               Boolean  @default(true)
+  revSharePercent        Int?
+  stripeConnectAccountId String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   videos             Video[]
   channelCreators    ChannelCreator[]
@@ -464,12 +490,25 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  videos  Video[]
+  channel      Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  videoLinks   VideoCategory[]
 
   @@unique([channelId, slug])
   @@index([channelId])
   @@index([sortOrder])
+}
+
+/// Join table: a video may belong to multiple categories.
+model VideoCategory {
+  videoId    String
+  categoryId String
+
+  video    Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([videoId, categoryId])
+  @@index([videoId])
+  @@index([categoryId])
 }
 
 model Video {
@@ -477,7 +516,6 @@ model Video {
   slug                  String          @unique
   channelId             String
   creatorProfileId      String?
-  categoryId            String?
   title                 String
   description           String?
   shortDescription      String?
@@ -503,7 +541,7 @@ model Video {
 
   channel          Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
   creatorProfile   CreatorProfile? @relation(fields: [creatorProfileId], references: [id], onDelete: SetNull)
-  category         Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryLinks    VideoCategory[]
   createdByUser    User            @relation("CreatedByUser", fields: [createdByUserId], references: [id])
   updatedByUser    User?           @relation("UpdatedByUser", fields: [updatedByUserId], references: [id])
 
@@ -522,11 +560,11 @@ model Video {
   watchSessions          WatchSession[]
   watchHistory           WatchHistory[]
   favorites              Favorite[]
+  adImpressionCharges    AdImpressionCharge[]
 
   @@index([slug])
   @@index([channelId])
   @@index([creatorProfileId])
-  @@index([categoryId])
   @@index([status])
   @@index([visibility])
 }
@@ -900,7 +938,7 @@ model UserSubscription {
   channelId               String
   subscriptionPlanId      String
   priceVariantId          String?
-  stripeSubscriptionId    String?            @unique
+  stripeSubscriptionId    String?
   stripePriceId           String?
   stripeCheckoutSessionId String?
   status                  SubscriptionStatus @default(INCOMPLETE)
@@ -916,6 +954,7 @@ model UserSubscription {
   subscriptionPlan SubscriptionPlan  @relation(fields: [subscriptionPlanId], references: [id])
   priceVariant     PlanPriceVariant? @relation(fields: [priceVariantId], references: [id])
 
+  @@unique([userId, subscriptionPlanId])
   @@index([userId])
   @@index([channelId])
   @@index([stripeSubscriptionId])
@@ -1073,4 +1112,147 @@ model Favorite {
   @@unique([userId, profileId, videoId])
   @@index([userId])
   @@index([videoId])
+}
+
+// ─── ADVERTISER PLATFORM ─────────────────────────────────
+
+/// Singleton row — use id "singleton" only; default billing when campaign has no override
+model AdvertiserPlatformSettings {
+  id                     String   @id
+  defaultPricePerViewUsd Decimal  @default(0.01) @db.Decimal(12, 6)
+  updatedAt              DateTime @updatedAt
+}
+
+model Advertiser {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  emailVerifiedAt  DateTime?
+  passwordHash     String
+  companyName      String
+  contactName      String
+  phone            String?
+  stripeCustomerId String?   @unique
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions   AdvertiserSession[]
+  campaigns  AdCampaign[]
+
+  @@index([stripeCustomerId])
+}
+
+model AdvertiserSession {
+  id               String    @id @default(cuid())
+  advertiserId     String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  advertiser Advertiser @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
+
+  @@index([advertiserId])
+}
+
+model AdCampaign {
+  id              String         @id @default(cuid())
+  advertiserId    String
+  name            String
+  status          CampaignStatus @default(DRAFT)
+  totalBudget     Decimal        @db.Decimal(12, 2)
+  dailyMaxSpend   Decimal        @db.Decimal(12, 2)
+  totalSpent      Decimal        @default(0) @db.Decimal(12, 2)
+  /// USD charged per ad view/impression; falls back to platform default when null
+  pricePerViewUsd Decimal?       @db.Decimal(12, 6)
+  targetAgeMin    Int?
+  targetAgeMax    Int?
+  startDate       DateTime?
+  endDate         DateTime?
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  advertiser   Advertiser      @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
+  geoTargets   AdGeoTarget[]
+  creatives    AdCreative[]
+  dailyCharges AdDailyCharge[]
+  impressionCharges AdImpressionCharge[]
+
+  @@index([advertiserId])
+  @@index([status])
+}
+
+model AdGeoTarget {
+  id         String        @id @default(cuid())
+  campaignId String
+  type       GeoTargetType
+  value      String
+  createdAt  DateTime      @default(now())
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+model AdCreative {
+  id              String           @id @default(cuid())
+  campaignId      String
+  muxUploadId     String?
+  muxAssetId      String?          @unique
+  muxPlaybackId   String?
+  assetStatus     AdCreativeStatus @default(CREATED)
+  durationSeconds Int?
+  fileName        String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  impressionCharges AdImpressionCharge[]
+
+  @@index([campaignId])
+  @@index([muxAssetId])
+}
+
+model AdDailyCharge {
+  id                    String   @id @default(cuid())
+  campaignId            String
+  date                  DateTime @db.Date
+  amount                Decimal  @db.Decimal(12, 2)
+  impressions           Int      @default(0)
+  stripePaymentIntentId String?
+  createdAt             DateTime @default(now())
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, date])
+  @@index([campaignId])
+}
+
+/// One row per billed ad impression (immediate charge for testing; later may aggregate)
+model AdImpressionCharge {
+  id                     String   @id @default(cuid())
+  campaignId             String
+  creativeId             String
+  contentVideoId         String
+  amountUsd              Decimal  @db.Decimal(12, 6)
+  chargedAmountCents     Int
+  currency               String   @default("usd")
+  stripePaymentIntentId  String?
+  status                 String
+  errorMessage           String?
+  idempotencyKey         String?  @unique
+  createdAt              DateTime @default(now())
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  creative AdCreative @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  contentVideo Video   @relation(fields: [contentVideoId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([contentVideoId])
+  @@index([createdAt])
 }

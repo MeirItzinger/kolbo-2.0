@@ -91,7 +91,7 @@ export interface Category {
   slug: string;
   sortOrder: number;
   isActive: boolean;
-  _count?: { videos?: number };
+  _count?: { videos?: number; videoLinks?: number };
   createdAt: string;
   updatedAt: string;
 }
@@ -101,7 +101,8 @@ export interface Video {
   slug: string;
   channelId: string;
   creatorProfileId: string | null;
-  categoryId?: string | null;
+  /** Assigned categories (many-to-many). */
+  categories?: { id: string; name: string; slug: string }[];
   title: string;
   description: string | null;
   shortDescription: string | null;
@@ -121,7 +122,6 @@ export interface Video {
   previewText: string | null;
   channel?: Channel;
   creatorProfile?: CreatorProfile;
-  category?: { id: string; name: string; slug: string } | null;
   videoAssets?: VideoAsset[];
   thumbnailAssets?: ThumbnailAsset[];
   tagAssignments?: VideoTagAssignment[];
@@ -520,4 +520,105 @@ export interface DirectUploadResponse {
   uploadUrl: string;
   uploadId: string;
   videoAssetId: string;
+}
+
+// ── Advertiser Platform ────────────────────────────────────────────
+
+export type CampaignStatus =
+  | "DRAFT"
+  | "PENDING_REVIEW"
+  | "APPROVED"
+  | "ACTIVE"
+  | "PAUSED"
+  | "REJECTED"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type GeoTargetType = "CITY" | "ZIP_CODE";
+
+export type AdCreativeStatus = "CREATED" | "UPLOADED" | "PROCESSING" | "READY" | "ERRORED";
+
+export interface Advertiser {
+  id: string;
+  email: string;
+  companyName: string;
+  contactName: string;
+  phone: string | null;
+  stripeCustomerId: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AdCampaign {
+  id: string;
+  advertiserId: string;
+  name: string;
+  status: CampaignStatus;
+  totalBudget: number;
+  dailyMaxSpend: number;
+  totalSpent: number;
+  /** USD per view; null = use platform default */
+  pricePerViewUsd?: string | number | null;
+  targetAgeMin: number | null;
+  targetAgeMax: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  rejectionReason: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  geoTargets?: AdGeoTarget[];
+  creatives?: AdCreative[];
+  advertiser?: Pick<
+    Advertiser,
+    "id" | "email" | "companyName" | "contactName" | "phone"
+  >;
+  dailyCharges?: AdDailyCharge[];
+  _count?: { dailyCharges: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Super-admin list: advertiser with nested campaigns */
+export interface AdvertiserWithCampaigns extends Advertiser {
+  campaigns: AdCampaign[];
+  _count?: { campaigns: number };
+}
+
+export interface AdGeoTarget {
+  id: string;
+  campaignId: string;
+  type: GeoTargetType;
+  value: string;
+}
+
+export interface AdCreative {
+  id: string;
+  campaignId: string;
+  muxUploadId: string | null;
+  muxAssetId: string | null;
+  muxPlaybackId: string | null;
+  assetStatus: AdCreativeStatus;
+  durationSeconds: number | null;
+  fileName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdDailyCharge {
+  id: string;
+  campaignId: string;
+  date: string;
+  amount: number;
+  impressions: number;
+  stripePaymentIntentId: string | null;
+  createdAt: string;
+}
+
+export interface AdvertiserPaymentMethod {
+  id: string;
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
 }

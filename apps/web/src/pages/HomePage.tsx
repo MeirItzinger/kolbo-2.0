@@ -216,25 +216,55 @@ function ChannelRowSection({
     subscriptionPlans?: { price: string | number }[];
   }[];
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   if (channels.length === 0) return null;
+
+  const scroll = (dir: "left" | "right") => {
+    scrollRef.current?.scrollBy({
+      left: dir === "left" ? -280 : 280,
+      behavior: "smooth",
+    });
+  };
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-xl font-semibold text-white">Popular Channels</h2>
-        <Link
-          to="/explore"
-          className="text-sm text-primary-400 hover:text-primary-300"
-        >
-          View all
-        </Link>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => scroll("left")}
+              className="rounded-full bg-surface-800/80 p-1.5 text-surface-300 hover:bg-surface-700"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => scroll("right")}
+              className="rounded-full bg-surface-800/80 p-1.5 text-surface-300 hover:bg-surface-700"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+          <Link
+            to="/explore"
+            className="text-sm text-primary-400 hover:text-primary-300"
+          >
+            View all
+          </Link>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      <div
+        ref={scrollRef}
+        className="flex gap-4 overflow-x-auto pb-2 scrollbar-none"
+      >
         {channels.map((ch) => (
           <Link
             key={ch.id}
             to={`/channels/${ch.slug}`}
-            className="group rounded-xl border border-surface-800 bg-surface-900 p-4 text-center transition-all hover:border-surface-600 hover:bg-surface-850"
+            className="group w-36 shrink-0 rounded-xl border border-surface-800 bg-surface-900 p-4 text-center transition-all hover:border-surface-600 sm:w-40"
           >
             {ch.logoUrl ? (
               <img

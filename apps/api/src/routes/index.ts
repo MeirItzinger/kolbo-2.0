@@ -22,6 +22,11 @@ import channelPageElementRoutes from "./channelPageElements";
 import categoryRoutes from "./categories";
 import channelSalesRoutes from "./channelSales";
 import salesRoutes from "./sales";
+import advertiserAuthRoutes from "./advertiserAuth";
+import advertiserCampaignRoutes from "./advertiserCampaigns";
+import advertiserPaymentRoutes from "./advertiserPayments";
+import adminAdCampaignRoutes from "./adminAdCampaigns";
+import adminAdvertiserRoutes from "./adminAdvertisers";
 
 const router = Router();
 
@@ -47,5 +52,11 @@ router.use("/channels", channelPageElementRoutes);
 router.use("/channels", categoryRoutes);
 router.use("/channels", channelSalesRoutes);
 router.use("/sales", salesRoutes);
+
+router.use("/advertiser/auth", advertiserAuthRoutes);
+router.use("/advertiser/campaigns", advertiserCampaignRoutes);
+router.use("/advertiser/payment-methods", advertiserPaymentRoutes);
+router.use("/admin/ad-campaigns", adminAdCampaignRoutes);
+router.use("/admin/advertisers", adminAdvertiserRoutes);
 
 export default router;

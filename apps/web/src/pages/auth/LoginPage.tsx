@@ -45,8 +45,17 @@ export default function LoginPage() {
   const onSubmit = async (values: LoginValues) => {
     setServerError(null);
     try {
-      await login(values.email, values.password);
-      navigate(from, { replace: true });
+      const user = await login(values.email, values.password);
+      const isSuperAdmin = user.roles.some((r: any) => (r.role?.key ?? r) === "SUPER_ADMIN");
+      const channelAdminRole = user.roles.find((r: any) => (r.role?.key ?? r) === "CHANNEL_ADMIN");
+      const creatorAdminRole = user.roles.find((r: any) => (r.role?.key ?? r) === "CREATOR_ADMIN");
+      if (isSuperAdmin || channelAdminRole) {
+        navigate("/admin", { replace: true });
+      } else if (creatorAdminRole?.creatorProfileId) {
+        navigate(`/creator-admin/${creatorAdminRole.creatorProfileId}`, { replace: true });
+      } else {
+        navigate(from, { replace: true });
+      }
     } catch (err: any) {
       setServerError(
         err?.response?.data?.message ?? "Invalid email or password",

@@ -42,3 +42,6 @@ apps/api/prisma/*.db-journal
 # Test / coverage
 coverage/
 .nyc_output/
+
+# Local uploaded assets (dev)
+apps/api/uploads/

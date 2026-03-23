@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Pencil, Trash2, Users, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, AlertTriangle, ExternalLink } from "lucide-react";
 import {
   adminListCreators,
   adminCreateCreator,
@@ -11,6 +11,7 @@ import {
   adminDeleteCreator,
   adminListChannels,
   adminGetChannel,
+  adminCreateConnectOnboardingLink,
 } from "@/api/admin";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
@@ -32,6 +33,7 @@ const creatorSchema = z.object({
   slug: z.string().min(1, "Slug is required"),
   bio: z.string().optional(),
   avatarUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  revSharePercent: z.coerce.number().min(0).max(100).optional().or(z.literal("")),
 });
 
 type CreatorFormData = z.infer<typeof creatorSchema>;
@@ -47,6 +49,18 @@ export default function AdminCreatorsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<CreatorProfile | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CreatorProfile | null>(null);
+  const [connectingId, setConnectingId] = useState<string | null>(null);
+
+  async function handleConnectStripe(creatorId: string) {
+    setConnectingId(creatorId);
+    try {
+      const { url } = await adminCreateConnectOnboardingLink(creatorId);
+      window.location.href = url;
+    } catch (e) {
+      console.error(e);
+      setConnectingId(null);
+    }
+  }
 
   const creatorsQuery = useQuery({
     queryKey: ["admin", "creators", channelAdminChannelId],
@@ -118,6 +132,8 @@ export default function AdminCreatorsPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-surface-400">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-surface-400">Slug</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-surface-400">Channel</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase text-surface-400">Rev Share</th>
+                <th className="px-4 py-3 text-center text-xs font-medium uppercase text-surface-400">Stripe Connect</th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase text-surface-400">Actions</th>
               </tr>
             </thead>
@@ -127,6 +143,26 @@ export default function AdminCreatorsPage() {
                   <td className="px-4 py-3 font-medium text-white">{cr.displayName}</td>
                   <td className="px-4 py-3 text-sm text-surface-400">{cr.slug}</td>
                   <td className="px-4 py-3 text-sm text-surface-400">{creatorChannels(cr)}</td>
+                  <td className="px-4 py-3 text-center text-sm">
+                    {cr.revSharePercent != null
+                      ? <Badge variant="secondary">{cr.revSharePercent}%</Badge>
+                      : <span className="text-surface-600">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {cr.stripeConnectAccountId ? (
+                      <Badge variant="success">Connected</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={connectingId === cr.id}
+                        onClick={() => handleConnectStripe(cr.id)}
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        {connectingId === cr.id ? "Redirecting…" : "Connect Stripe"}
+                      </Button>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
                       <Button variant="ghost" size="icon" onClick={() => { setEditing(cr); setShowForm(true); }}>
@@ -205,6 +241,7 @@ function CreatorFormDialog({
           slug: creator.slug,
           bio: creator.bio ?? "",
           avatarUrl: (creator as any).avatarUrl ?? "",
+          revSharePercent: (creator as any).revSharePercent ?? "",
         }
       : {
           channelId: lockedChannelId ?? "",
@@ -214,11 +251,13 @@ function CreatorFormDialog({
   const createMutation = useMutation({
     mutationFn: adminCreateCreator,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "creators"] }); onClose(); },
+    onError: (err: any) => alert(err?.response?.data?.message ?? "Failed to create creator"),
   });
 
   const updateMutation = useMutation({
     mutationFn: (data: CreatorFormData) => adminUpdateCreator(creator!.id, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "creators"] }); onClose(); },
+    onError: (err: any) => alert(err?.response?.data?.message ?? "Failed to update creator"),
   });
 
   const isPending = createMutation.isPending || updateMutation.isPending;
@@ -283,6 +322,22 @@ function CreatorFormDialog({
               <label className="mb-1 block text-sm font-medium text-surface-300">Avatar URL</label>
               <Input {...register("avatarUrl")} placeholder="https://..." />
               {errors.avatarUrl && <p className="mt-1 text-xs text-destructive">{errors.avatarUrl.message}</p>}
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-surface-300">
+                Revenue Share %
+              </label>
+              <p className="mb-1 text-xs text-surface-500">
+                Percentage of each subscription payment transferred to this creator via Stripe Connect. Leave blank for no revshare.
+              </p>
+              <Input
+                {...register("revSharePercent")}
+                type="number"
+                min="0"
+                max="100"
+                placeholder="e.g. 70"
+              />
+              {errors.revSharePercent && <p className="mt-1 text-xs text-destructive">{errors.revSharePercent.message}</p>}
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>

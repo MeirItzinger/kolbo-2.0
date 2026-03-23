@@ -45,7 +45,9 @@ export function ChannelSelection() {
     queryFn: () => listChannels({ perPage: 50 }),
   });
 
-  const channels = data?.data ?? [];
+  const channels = (data?.data ?? []).filter(
+    (ch) => (ch.subscriptionPlans ?? []).some((p: any) => p.isActive),
+  );
 
   const allBundles: { bundle: Bundle; channel: Channel }[] = channels.flatMap(
     (ch) =>
@@ -158,7 +160,7 @@ export function ChannelSelection() {
               {formatCurrency(total)}
             </p>
           </div>
-          <Button onClick={next} disabled={itemCount === 0}>
+          <Button onClick={next}>
             Review Order
             <ArrowRight className="h-4 w-4" />
           </Button>

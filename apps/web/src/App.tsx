@@ -3,7 +3,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { queryClient } from "@/lib/queryClient";
 import { AuthProvider } from "@/hooks/useAuth";
+import { AdvertiserAuthProvider } from "@/hooks/useAdvertiserAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AdvertiserRoute } from "@/components/AdvertiserRoute";
 import { RoleRoute } from "@/components/RoleRoute";
 import { Spinner } from "@/components/ui/Spinner";
 
@@ -97,6 +99,38 @@ const CreatorAdminVideos = lazy(
 const CreatorAdminVideoEdit = lazy(
   () => import("@/pages/creator-admin/VideoEditPage"),
 );
+const CreatorAdminCategories = lazy(
+  () => import("@/pages/creator-admin/CategoriesPage"),
+);
+
+// ── Advertiser pages ────────────────────────────────────────────────
+
+const AdvertiseLandingPage = lazy(
+  () => import("@/pages/advertise/LandingPage"),
+);
+const AdvertiserLoginPage = lazy(
+  () => import("@/pages/advertise/LoginPage"),
+);
+const AdvertiserSignupPage = lazy(
+  () => import("@/pages/advertise/SignupPage"),
+);
+const AdvertiserDashboard = lazy(
+  () => import("@/pages/advertise/DashboardPage"),
+);
+const CampaignCreatePage = lazy(
+  () => import("@/pages/advertise/CampaignCreatePage"),
+);
+const CampaignDetailPage = lazy(
+  () => import("@/pages/advertise/CampaignDetailPage"),
+);
+const AdvertiserLayout = lazy(() => import("@/layouts/AdvertiserLayout"));
+
+// ── Admin ad campaigns ──────────────────────────────────────────────
+
+const AdminAdCampaigns = lazy(
+  () => import("@/pages/admin/AdCampaignsPage"),
+);
+const AdminAdvertisers = lazy(() => import("@/pages/admin/AdvertisersPage"));
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -115,6 +149,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
+          <AdvertiserAuthProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* ── Public ──────────────────────────────── */}
@@ -141,10 +176,12 @@ export function App() {
                 <Route path="verify-email" element={<VerifyEmailPage />} />
               </Route>
 
+              {/* ── Watch page (accessible for free-with-ads) ── */}
+              <Route path="watch/:slug" element={<WatchPage />} />
+
               {/* ── Authenticated app ───────────────────── */}
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppLayout />}>
-                  <Route path="watch/:slug" element={<WatchPage />} />
                   <Route path="library" element={<MyLibraryPage />} />
                   <Route path="account" element={<AccountPage />} />
                   <Route
@@ -201,6 +238,11 @@ export function App() {
                     element={<AdminCategories />}
                   />
                   <Route path="sales" element={<AdminSales />} />
+                  <Route
+                    path="ad-campaigns"
+                    element={<AdminAdCampaigns />}
+                  />
+                  <Route path="advertisers" element={<AdminAdvertisers />} />
                 </Route>
               </Route>
 
@@ -247,6 +289,37 @@ export function App() {
                     path="videos/:id"
                     element={<CreatorAdminVideoEdit />}
                   />
+                  <Route path="categories" element={<CreatorAdminCategories />} />
+                </Route>
+              </Route>
+
+              {/* ── Advertiser (public landing) ──────────── */}
+              <Route element={<PublicLayout />}>
+                <Route path="advertise" element={<AdvertiseLandingPage />} />
+              </Route>
+
+              {/* ── Advertiser auth ─────────────────────── */}
+              <Route path="advertise/login" element={<AdvertiserLoginPage />} />
+              <Route
+                path="advertise/signup"
+                element={<AdvertiserSignupPage />}
+              />
+
+              {/* ── Advertiser protected ────────────────── */}
+              <Route element={<AdvertiserRoute />}>
+                <Route element={<AdvertiserLayout />}>
+                  <Route
+                    path="advertise/dashboard"
+                    element={<AdvertiserDashboard />}
+                  />
+                  <Route
+                    path="advertise/campaigns/new"
+                    element={<CampaignCreatePage />}
+                  />
+                  <Route
+                    path="advertise/campaigns/:id"
+                    element={<CampaignDetailPage />}
+                  />
                 </Route>
               </Route>
 
@@ -254,6 +327,7 @@ export function App() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
+          </AdvertiserAuthProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

@@ -160,6 +160,17 @@ export default function AdminVideosPage() {
 
       {videosQuery.isLoading ? (
         <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+      ) : videosQuery.isError ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-lg font-medium text-destructive">Could not load videos</p>
+            <p className="mt-2 text-sm text-surface-400">
+              {(videosQuery.error as any)?.response?.data?.message ??
+                (videosQuery.error as Error)?.message ??
+                "Check that the API is running and the database is migrated. Open the browser Network tab for /api/videos."}
+            </p>
+          </CardContent>
+        </Card>
       ) : videos.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">

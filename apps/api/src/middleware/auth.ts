@@ -17,6 +17,10 @@ export const authenticate = async (
     const token = header.slice(7);
     const decoded = verifyAccessToken(token);
 
+    if (decoded.type === "advertiser") {
+      throw ApiError.unauthorized("Advertiser tokens cannot access user routes");
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.sub },
       select: {

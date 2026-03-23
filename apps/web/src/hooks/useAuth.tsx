@@ -13,7 +13,7 @@ interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   signup: (payload: {
     email: string;
     password: string;
@@ -81,7 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      await loginMutation.mutateAsync({ email, password });
+      const result = await loginMutation.mutateAsync({ email, password });
+      return result.user;
     },
     [loginMutation],
   );

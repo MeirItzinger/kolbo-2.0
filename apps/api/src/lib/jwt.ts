@@ -1,23 +1,26 @@
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
 import { env } from "../config/env";
 
+export type TokenType = "user" | "advertiser";
+
 export interface TokenPayload {
   sub: string;
   email: string;
+  type?: TokenType;
 }
 
 export function signAccessToken(payload: TokenPayload): string {
   const options: SignOptions = {
     expiresIn: env.ACCESS_TOKEN_EXPIRES_IN as string,
   };
-  return jwt.sign(payload, env.JWT_ACCESS_SECRET, options);
+  return jwt.sign({ ...payload, type: payload.type ?? "user" }, env.JWT_ACCESS_SECRET, options);
 }
 
 export function signRefreshToken(payload: TokenPayload): string {
   const options: SignOptions = {
     expiresIn: env.REFRESH_TOKEN_EXPIRES_IN as string,
   };
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, options);
+  return jwt.sign({ ...payload, type: payload.type ?? "user" }, env.JWT_REFRESH_SECRET, options);
 }
 
 export function verifyAccessToken(token: string): TokenPayload & JwtPayload {

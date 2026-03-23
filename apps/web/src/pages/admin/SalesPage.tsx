@@ -6,7 +6,8 @@ import {
   ChevronRight,
   Receipt,
 } from "lucide-react";
-import { adminListSales } from "@/api/admin";
+import { adminListSales, adminListSalesByChannel } from "@/api/admin";
+import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import type { SalesTransaction } from "@/types";
@@ -47,20 +48,30 @@ function formatDate(dateStr: string) {
 }
 
 export default function SalesPage() {
+  const { user, hasRole } = useAuth();
+  const isSuperAdmin = hasRole("SUPER_ADMIN");
+  const channelAdminChannelId = !isSuperAdmin
+    ? user?.roles?.find((r: any) => r.role?.key === "CHANNEL_ADMIN")?.channelId
+    : undefined;
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
 
+  const queryParams = {
+    page,
+    perPage: 25,
+    search: debouncedSearch || undefined,
+    type: typeFilter || undefined,
+  };
+
   const salesQuery = useQuery({
-    queryKey: ["admin", "sales", { page, search: debouncedSearch, typeFilter }],
+    queryKey: ["admin", "sales", { ...queryParams, channelAdminChannelId }],
     queryFn: () =>
-      adminListSales({
-        page,
-        perPage: 25,
-        search: debouncedSearch || undefined,
-        type: typeFilter || undefined,
-      }),
+      channelAdminChannelId
+        ? adminListSalesByChannel(channelAdminChannelId, queryParams)
+        : adminListSales(queryParams),
   });
 
   const transactions = salesQuery.data?.data ?? [];
@@ -82,7 +93,7 @@ export default function SalesPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Sales</h1>
           <p className="mt-1 text-sm text-surface-400">
-            All transactions and payment activity
+            {isSuperAdmin ? "All transactions and payment activity" : "Transactions for your channel"}
           </p>
         </div>
         {meta && (
@@ -114,7 +125,7 @@ export default function SalesPage() {
         >
           <option value="">All Types</option>
           <option value="subscription">Subscription</option>
-          <option value="bundle">Bundle</option>
+          {isSuperAdmin && <option value="bundle">Bundle</option>}
           <option value="rental">Rental</option>
           <option value="purchase">Purchase</option>
         </select>
@@ -124,6 +135,13 @@ export default function SalesPage() {
       {salesQuery.isLoading ? (
         <div className="flex justify-center py-12">
           <Spinner size="lg" />
+        </div>
+      ) : salesQuery.isError ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 py-16 text-center">
+          <p className="text-lg font-medium text-white">Failed to load sales</p>
+          <p className="mt-1 text-sm text-surface-400">
+            {(salesQuery.error as any)?.response?.data?.message ?? "An error occurred loading transactions."}
+          </p>
         </div>
       ) : transactions.length === 0 ? (
         <div className="rounded-lg border border-surface-700 bg-surface-800/50 py-16 text-center">

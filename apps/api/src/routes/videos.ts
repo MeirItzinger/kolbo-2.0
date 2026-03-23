@@ -7,10 +7,15 @@ const router = Router();
 
 const adminAuth = [
   authenticate,
-  requireRole("SUPER_ADMIN", "CHANNEL_ADMIN"),
+  requireRole("SUPER_ADMIN", "CHANNEL_ADMIN", "CREATOR_ADMIN"),
 ];
 
 router.get("/", videoController.list);
+router.get(
+  "/:id/preview-playback",
+  ...adminAuth,
+  videoController.getAdminPreviewPlayback,
+);
 router.get("/:idOrSlug", videoController.getByIdOrSlug);
 
 router.post("/bulk-delete", ...adminAuth, videoController.bulkRemove);

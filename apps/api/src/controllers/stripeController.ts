@@ -5,6 +5,7 @@ import { stripe } from "../lib/stripe";
 import { env } from "../config/env";
 import * as stripeService from "../services/stripe/stripeService";
 import { handleWebhookEvent } from "../services/stripe/stripeWebhookService";
+import { prisma } from "../lib/prisma";
 
 export const createCheckoutForSubscription = asyncHandler(
   async (req: Request, res: Response) => {
@@ -115,13 +116,73 @@ export const verifySession = asyncHandler(
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.payment_status === "paid" || session.status === "complete") {
-      const { handleWebhookEvent: processEvent } = await import(
-        "../services/stripe/stripeWebhookService"
-      );
-      await processEvent({
+      await handleWebhookEvent({
         type: "checkout.session.completed",
         data: { object: session },
       } as any);
+
+      // Also process the invoice so invoice numbers appear in Sales
+      const stripeSubscriptionId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id;
+
+      if (stripeSubscriptionId) {
+        try {
+          const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+          const latestInvoiceId =
+            typeof subscription.latest_invoice === "string"
+              ? subscription.latest_invoice
+              : subscription.latest_invoice?.id;
+
+          if (latestInvoiceId) {
+            const invoice = await stripe.invoices.retrieve(latestInvoiceId);
+            if (invoice.status === "paid") {
+              await handleWebhookEvent({
+                type: "invoice.paid",
+                data: { object: invoice },
+              } as any);
+
+              // Revenue share: transfer creator's cut
+              const meta = session.metadata ?? {};
+              const channelId = meta.channelId;
+              const amountPaidCents = invoice.amount_paid;
+
+              if (channelId && amountPaidCents > 0) {
+                const creators = await prisma.creatorProfile.findMany({
+                  where: {
+                    channelCreators: { some: { channelId, status: "APPROVED" } },
+                    stripeConnectAccountId: { not: null },
+                    revSharePercent: { not: null, gt: 0 },
+                  },
+                });
+                for (const creator of creators) {
+                  const transferCents = Math.floor(
+                    amountPaidCents * (creator.revSharePercent! / 100)
+                  );
+                  if (transferCents > 0) {
+                    await stripe.transfers.create({
+                      amount: transferCents,
+                      currency: invoice.currency ?? "usd",
+                      destination: creator.stripeConnectAccountId!,
+                      transfer_group: `sub_${stripeSubscriptionId}`,
+                      metadata: {
+                        creatorProfileId: creator.id,
+                        channelId,
+                        stripeSubscriptionId,
+                        revSharePercent: String(creator.revSharePercent),
+                      },
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("[revshare] transfer error:", err);
+          // Non-fatal: invoice/transfer failed, subscription still active
+        }
+      }
     }
 
     res.json({

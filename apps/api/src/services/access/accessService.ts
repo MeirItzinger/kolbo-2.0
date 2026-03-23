@@ -178,55 +178,64 @@ export async function checkAccess(
     }
   }
 
-  // Also check channel-level subscriptions (if user has a sub to the video's channel)
-  const channelSub = await prisma.userSubscription.findFirst({
-    where: {
-      userId,
-      channelId: video.channelId,
-      status: { in: ["ACTIVE", "TRIALING"] },
-    },
-    include: { subscriptionPlan: true },
-  });
+  // Channel-level subscription/bundle checks only apply when the video is not
+  // explicitly gated as rental/purchase-only. If every access rule requires
+  // payment (RENTAL or PURCHASE), subscribers must still pay.
+  const hasPaywallOnlyRules =
+    accessRules.length > 0 &&
+    accessRules.every((r) => r.accessType === "RENTAL" || r.accessType === "PURCHASE");
 
-  if (channelSub) {
-    const plan = channelSub.subscriptionPlan;
-    return {
-      allowed: true,
-      reason: `Channel subscription: ${plan.name}`,
-      accessType: "SUBSCRIPTION",
-      adMode: resolveAdMode(video, plan.adTier),
-      maxConcurrentStreams: concurrencyTierToMax(plan.concurrencyTier),
-      ...baseResult,
-    };
-  }
-
-  // Also check bundles that include the channel
-  const bundleChannels = await prisma.bundleChannel.findMany({
-    where: { channelId: video.channelId },
-    select: { bundleId: true },
-  });
-
-  if (bundleChannels.length > 0) {
-    const channelBundleIds = bundleChannels.map((bc) => bc.bundleId);
-    const channelBundleSub = await prisma.userBundleSubscription.findFirst({
+  if (!hasPaywallOnlyRules) {
+    // Also check channel-level subscriptions (if user has a sub to the video's channel)
+    const channelSub = await prisma.userSubscription.findFirst({
       where: {
         userId,
-        bundleId: { in: channelBundleIds },
+        channelId: video.channelId,
         status: { in: ["ACTIVE", "TRIALING"] },
       },
-      include: { bundle: true },
+      include: { subscriptionPlan: true },
     });
 
-    if (channelBundleSub) {
-      const bundle = channelBundleSub.bundle;
+    if (channelSub) {
+      const plan = channelSub.subscriptionPlan;
       return {
         allowed: true,
-        reason: `Bundle: ${bundle.name}`,
-        accessType: "BUNDLE",
-        adMode: resolveAdMode(video, bundle.adTier),
-        maxConcurrentStreams: concurrencyTierToMax(bundle.concurrencyTier),
+        reason: `Channel subscription: ${plan.name}`,
+        accessType: "SUBSCRIPTION",
+        adMode: resolveAdMode(video, plan.adTier),
+        maxConcurrentStreams: concurrencyTierToMax(plan.concurrencyTier),
         ...baseResult,
       };
+    }
+
+    // Also check bundles that include the channel
+    const bundleChannels = await prisma.bundleChannel.findMany({
+      where: { channelId: video.channelId },
+      select: { bundleId: true },
+    });
+
+    if (bundleChannels.length > 0) {
+      const channelBundleIds = bundleChannels.map((bc) => bc.bundleId);
+      const channelBundleSub = await prisma.userBundleSubscription.findFirst({
+        where: {
+          userId,
+          bundleId: { in: channelBundleIds },
+          status: { in: ["ACTIVE", "TRIALING"] },
+        },
+        include: { bundle: true },
+      });
+
+      if (channelBundleSub) {
+        const bundle = channelBundleSub.bundle;
+        return {
+          allowed: true,
+          reason: `Bundle: ${bundle.name}`,
+          accessType: "BUNDLE",
+          adMode: resolveAdMode(video, bundle.adTier),
+          maxConcurrentStreams: concurrencyTierToMax(bundle.concurrencyTier),
+          ...baseResult,
+        };
+      }
     }
   }
 

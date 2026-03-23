@@ -22,7 +22,7 @@ export async function createDirectUpload(
   const existingAsset = await prisma.videoAsset.findFirst({
     where: {
       videoId,
-      assetStatus: { in: ["CREATED", "UPLOADED", "PROCESSING", "READY"] },
+      assetStatus: { in: ["UPLOADED", "PROCESSING", "READY"] },
     },
   });
   if (existingAsset) {
@@ -30,6 +30,11 @@ export async function createDirectUpload(
       "This video already has an active asset. Delete it before uploading a new one."
     );
   }
+
+  // Clean up any stale CREATED records (upload was set up but file never sent)
+  await prisma.videoAsset.deleteMany({
+    where: { videoId, assetStatus: "CREATED" },
+  });
 
   const upload = await mux.video.uploads.create({
     cors_origin: corsOrigin,

@@ -19,8 +19,26 @@ api.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<string> | null = null;
 
+const API_ORIGIN = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api$/, "");
+
+function resolveUploads(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.startsWith("/uploads/") ? `${API_ORIGIN}${value}` : value;
+  }
+  if (Array.isArray(value)) return value.map(resolveUploads);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = resolveUploads(v);
+    return out;
+  }
+  return value;
+}
+
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    res.data = resolveUploads(res.data);
+    return res;
+  },
   async (error) => {
     const original = error.config;
 

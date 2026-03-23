@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, User, LogOut, ChevronDown, Shield } from "lucide-react";
+import { Menu, X, User, LogOut, ChevronDown, Shield, Megaphone } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
@@ -58,9 +58,30 @@ export default function PublicLayout() {
             >
               Browse
             </NavLink>
+            {isAuthenticated && (
+              <NavLink
+                to="/library"
+                className={({ isActive }) =>
+                  `rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-surface-800 text-white"
+                      : "text-surface-300 hover:bg-surface-800/50 hover:text-white"
+                  }`
+                }
+              >
+                My Stuff
+              </NavLink>
+            )}
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
+            <Link
+              to="/advertise"
+              className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-600/10 hover:text-amber-300"
+            >
+              <Megaphone className="h-3.5 w-3.5" />
+              Advertise with Kolbo
+            </Link>
             {isAuthenticated ? (
               <div className="relative" ref={dropdownRef}>
                 <button
@@ -103,20 +124,16 @@ export default function PublicLayout() {
                         Admin Panel
                       </Link>
                     )}
-                    {!hasRole("SUPER_ADMIN") && (() => {
-                      const r = (user as any)?.roles?.find((r: any) => r.role?.key === "CHANNEL_ADMIN");
-                      const channelId = r?.channelId ?? r?.channel?.id;
-                      return channelId ? (
-                        <Link
-                          to={`/channel-admin/${channelId}`}
-                          onClick={() => setDropdownOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
-                        >
-                          <Shield className="h-4 w-4" />
-                          Channel Dashboard
-                        </Link>
-                      ) : null;
-                    })()}
+                    {hasRole("CHANNEL_ADMIN") && !hasRole("SUPER_ADMIN") && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
+                      >
+                        <Shield className="h-4 w-4" />
+                        Admin Panel
+                      </Link>
+                    )}
                     <div className="border-t border-surface-800">
                       <button
                         type="button"
@@ -164,6 +181,23 @@ export default function PublicLayout() {
             >
               Browse
             </NavLink>
+            {isAuthenticated && (
+              <NavLink
+                to="/library"
+                className="block rounded-md px-3 py-2 text-sm font-medium text-surface-300 hover:bg-surface-800 hover:text-white"
+                onClick={() => setMobileOpen(false)}
+              >
+                My Stuff
+              </NavLink>
+            )}
+            <Link
+              to="/advertise"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-amber-400 hover:bg-amber-600/10"
+              onClick={() => setMobileOpen(false)}
+            >
+              <Megaphone className="h-4 w-4" />
+              Advertise with Kolbo
+            </Link>
             <div className="flex flex-col gap-2 border-t border-surface-800 pt-2">
               {isAuthenticated ? (
                 <>
@@ -175,15 +209,11 @@ export default function PublicLayout() {
                       <Link to="/admin" onClick={() => setMobileOpen(false)}>Admin Panel</Link>
                     </Button>
                   )}
-                  {!hasRole("SUPER_ADMIN") && (() => {
-                    const r = (user as any)?.roles?.find((r: any) => r.role?.key === "CHANNEL_ADMIN");
-                    const channelId = r?.channelId ?? r?.channel?.id;
-                    return channelId ? (
-                      <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
-                        <Link to={`/channel-admin/${channelId}`} onClick={() => setMobileOpen(false)}>Channel Dashboard</Link>
-                      </Button>
-                    ) : null;
-                  })()}
+                  {hasRole("CHANNEL_ADMIN") && !hasRole("SUPER_ADMIN") && (
+                    <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
+                      <Link to="/admin" onClick={() => setMobileOpen(false)}>Admin Panel</Link>
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => { setMobileOpen(false); handleLogout(); }}>
                     Log Out
                   </Button>

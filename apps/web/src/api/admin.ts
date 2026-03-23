@@ -78,8 +78,24 @@ export async function adminUpdateCreator(
   return unwrap(data);
 }
 
+export async function adminGetCreator(id: string): Promise<CreatorProfile> {
+  const { data } = await api.get(`/creators/${id}`);
+  return unwrap(data);
+}
+
 export async function adminDeleteCreator(id: string): Promise<void> {
   await api.delete(`/creators/${id}`);
+}
+
+export async function adminCreateConnectOnboardingLink(
+  id: string,
+): Promise<{ url: string; accountId: string }> {
+  const returnUrl = `${window.location.origin}/admin/creators`;
+  const { data } = await api.post(`/creators/${id}/connect-onboarding`, {
+    returnUrl,
+    refreshUrl: returnUrl,
+  });
+  return unwrap(data);
 }
 
 // ── Videos ─────────────────────────────────────────────────────────
@@ -91,13 +107,28 @@ export async function adminListVideos(params?: {
   page?: number;
   perPage?: number;
 }): Promise<PaginatedResponse<Video>> {
-  const { data } = await api.get("/videos", { params });
+  const { perPage, ...rest } = params ?? {};
+  const { data } = await api.get("/videos", {
+    params: {
+      ...rest,
+      ...(perPage != null ? { limit: perPage } : {}),
+    },
+  });
   return data;
 }
 
 export async function adminGetVideo(id: string): Promise<Video> {
   const { data } = await api.get(`/videos/${id}`);
   return unwrap(data);
+}
+
+/** Signed/public playback credentials for admin form preview (no watch session). */
+export async function adminGetVideoPreviewPlayback(
+  videoId: string,
+): Promise<{ playbackId: string; token: string | null }> {
+  const { data } = await api.get(`/videos/${videoId}/preview-playback`);
+  const inner = data?.data ?? data;
+  return inner;
 }
 
 export async function adminCreateVideo(payload: Partial<Video>): Promise<Video> {

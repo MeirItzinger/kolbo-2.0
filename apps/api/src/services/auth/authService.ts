@@ -125,7 +125,11 @@ export async function signup(
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      roles: roles.map((ur) => ur.role.key),
+      roles: roles.map((ur) => ({
+        role: { key: ur.role.key, name: ur.role.name },
+        channelId: ur.channelId,
+        creatorProfileId: ur.creatorProfileId,
+      })),
     },
   };
 }
@@ -180,7 +184,11 @@ export async function login(email: string, password: string) {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      roles: user.roles.map((ur) => ur.role.key),
+      roles: user.roles.map((ur) => ({
+        role: { key: ur.role.key, name: ur.role.name },
+        channelId: ur.channelId,
+        creatorProfileId: ur.creatorProfileId,
+      })),
     },
   };
 }

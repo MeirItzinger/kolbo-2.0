@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   adminGetVideo,
+  adminGetVideoPreviewPlayback,
   adminCreateVideo,
   adminUpdateVideo,
   adminListChannels,
@@ -25,7 +26,9 @@ import {
   adminGetChannel,
   adminListCategories,
   createDirectUpload,
+  uploadImage,
 } from "@/api/admin";
+import { VideoPlayer } from "@/features/player/VideoPlayer";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -38,6 +41,7 @@ import {
   CardTitle,
 } from "@/components/ui/Card";
 import { slugify } from "@/lib/utils";
+import type { Category } from "@/types";
 
 const rentalSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -53,7 +57,7 @@ const purchaseSchema = z.object({
 const videoSchema = z.object({
   channelId: z.string().min(1, "Channel is required"),
   creatorProfileId: z.string().optional().default(""),
-  categoryId: z.string().optional().default(""),
+  categoryIds: z.array(z.string()).default([]),
   title: z.string().min(1, "Title is required"),
   slug: z.string().min(1, "Slug is required"),
   description: z.string().optional(),
@@ -120,14 +124,6 @@ export default function AdminVideoEditPage() {
   const plans = Array.isArray(plansQuery.data) ? plansQuery.data : (plansQuery.data as any)?.data ?? [];
   const channelAllowedTypes = channelDetailQuery.data?.allowedAccessTypes;
 
-  const effectiveChannelId = channelAdminChannelId || watch("channelId");
-  const categoriesQuery = useQuery({
-    queryKey: ["admin", "categories", effectiveChannelId],
-    queryFn: () => adminListCategories(effectiveChannelId),
-    enabled: !!effectiveChannelId,
-  });
-  const categories = categoriesQuery.data ?? [];
-
   const {
     register,
     handleSubmit,
@@ -141,7 +137,7 @@ export default function AdminVideoEditPage() {
       ? {
           channelId: video.channelId ?? "",
           creatorProfileId: video.creatorProfileId ?? "",
-          categoryId: video.categoryId ?? "",
+          categoryIds: (video.categories ?? []).map((c) => c.id),
           title: video.title ?? "",
           slug: video.slug ?? "",
           description: video.description ?? "",
@@ -155,7 +151,7 @@ export default function AdminVideoEditPage() {
           prerollAd: video.hasPrerollAds ?? false,
           midrollAd: video.hasMidrollAds ?? false,
           tags: (video.tagAssignments ?? []).map((ta: any) => ta.tag?.name ?? "").filter(Boolean).join(", "),
-          subscriptionPlanId: "",
+          subscriptionPlanId: video.videoAccessRules?.find((r: any) => r.accessType === "SUBSCRIPTION")?.subscriptionPlanId ?? "",
           scheduledAt: video.scheduledPublishAt ?? "",
           rentalOptions: (video.rentalOptions ?? []).map((r: any) => ({
             name: r.name ?? "",
@@ -167,13 +163,26 @@ export default function AdminVideoEditPage() {
             price: String(p.price ?? ""),
           })),
         }
-      : { status: "draft", subscriptionGated: true, rentalOptions: [], purchaseOptions: [] },
+      : {
+          status: "draft",
+          subscriptionGated: true,
+          rentalOptions: [],
+          purchaseOptions: [],
+          categoryIds: [],
+        },
   });
 
   const rentalFields = useFieldArray({ control, name: "rentalOptions" });
   const purchaseFields = useFieldArray({ control, name: "purchaseOptions" });
 
   const watchChannelId = watch("channelId");
+  const effectiveChannelIdForCategories = channelAdminChannelId || watchChannelId;
+  const categoriesQuery = useQuery({
+    queryKey: ["admin", "categories", effectiveChannelIdForCategories],
+    queryFn: () => adminListCategories(effectiveChannelIdForCategories),
+    enabled: !!effectiveChannelIdForCategories,
+  });
+  const categories = categoriesQuery.data ?? [];
   const watchRentalEnabled = watch("rentalEnabled");
   const watchPurchaseEnabled = watch("purchaseEnabled");
   const watchFreeWithAds = watch("freeWithAds");
@@ -232,7 +241,7 @@ export default function AdminVideoEditPage() {
     setSubmitError(null);
     const payload: any = {
       ...data,
-      categoryId: data.categoryId || null,
+      categoryIds: data.categoryIds ?? [],
       tags: data.tags?.split(",").map((t) => t.trim()).filter(Boolean) ?? [],
       rentalOptions: data.rentalEnabled ? (data.rentalOptions ?? []) : [],
       purchaseOptions: data.purchaseEnabled ? (data.purchaseOptions ?? []) : [],
@@ -353,16 +362,46 @@ export default function AdminVideoEditPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-surface-300">Category</label>
-                  <select
-                    {...register("categoryId")}
-                    className="flex h-10 w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-surface-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="">No category</option>
-                    {categories.map((cat: any) => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
+                  <label className="mb-1 block text-sm font-medium text-surface-300">Categories</label>
+                  <p className="mb-2 text-xs text-surface-500">
+                    Select one or more categories for this video.
+                  </p>
+                  <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-surface-700 bg-surface-900 p-2">
+                    {categories.length === 0 ? (
+                      <p className="px-2 py-2 text-sm text-surface-500">
+                        No categories for this channel yet.
+                      </p>
+                    ) : (
+                      categories.map((cat: Category) => {
+                        const selected = watch("categoryIds") ?? [];
+                        return (
+                          <label
+                            key={cat.id}
+                            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-800"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected.includes(cat.id)}
+                              onChange={(e) => {
+                                const cur = watch("categoryIds") ?? [];
+                                if (e.target.checked) {
+                                  setValue("categoryIds", [...cur, cat.id], { shouldDirty: true });
+                                } else {
+                                  setValue(
+                                    "categoryIds",
+                                    cur.filter((id) => id !== cat.id),
+                                    { shouldDirty: true },
+                                  );
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-surface-600 bg-surface-950 text-primary-600"
+                            />
+                            <span className="text-sm text-surface-200">{cat.name}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-surface-300">Title</label>
@@ -430,6 +469,31 @@ export default function AdminVideoEditPage() {
                 )}
               </CardContent>
             </Card>
+
+            {!isNew && video?.id && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Thumbnail</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ThumbnailUploadSection
+                    videoId={video.id}
+                    currentUrl={(video as any).thumbnailAssets?.[0]?.imageUrl ?? null}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            {!isNew && video?.id && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Preview</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <AdminVideoPreview videoId={video.id} title={video.title ?? "Video"} />
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}
@@ -685,6 +749,123 @@ export default function AdminVideoEditPage() {
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function resolveImageUrl(url: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith("http")) return url;
+  const apiOrigin = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api$/, "");
+  return `${apiOrigin}${url}`;
+}
+
+function ThumbnailUploadSection({
+  videoId,
+  currentUrl,
+}: {
+  videoId: string;
+  currentUrl: string | null;
+}) {
+  const [preview, setPreview] = useState<string | null>(resolveImageUrl(currentUrl));
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
+
+  const handleFile = async (file: File) => {
+    setError(null);
+    setUploading(true);
+    try {
+      const { url } = await uploadImage(file);
+      await adminUpdateVideo(videoId, { thumbnailUrl: url } as any);
+      setPreview(url);
+      qc.invalidateQueries({ queryKey: ["admin", "video", videoId] });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err?.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {preview && (
+        <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-lg border border-surface-700 bg-surface-800">
+          <img src={preview} alt="Thumbnail" className="h-full w-full object-cover" />
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        disabled={uploading}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        {uploading ? <Spinner size="sm" /> : <Upload className="h-4 w-4" />}
+        {preview ? "Replace Thumbnail" : "Upload Thumbnail"}
+      </Button>
+      {error && (
+        <p className="flex items-center gap-1 text-sm text-destructive">
+          <X className="h-4 w-4" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AdminVideoPreview({ videoId, title }: { videoId: string; title: string }) {
+  const previewQuery = useQuery({
+    queryKey: ["admin", "video", videoId, "preview-playback"],
+    queryFn: () => adminGetVideoPreviewPlayback(videoId),
+    enabled: !!videoId,
+    retry: false,
+  });
+
+  if (previewQuery.isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (previewQuery.isError) {
+    const msg =
+      (previewQuery.error as { response?: { data?: { message?: string } } })?.response?.data
+        ?.message ??
+      (previewQuery.error as Error)?.message ??
+      "Could not load preview.";
+    return <p className="text-sm text-surface-500">{msg}</p>;
+  }
+
+  const { playbackId, token } = previewQuery.data!;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-surface-500">
+        Admin-only preview. Site visitors still follow subscriptions, rentals, and purchases.
+      </p>
+      <div className="aspect-video w-full max-w-4xl overflow-hidden rounded-lg border border-surface-700 bg-black">
+        <VideoPlayer
+          playbackId={playbackId}
+          token={token ?? undefined}
+          title={title}
+          autoPlay={false}
+          className="h-full w-full"
+        />
+      </div>
     </div>
   );
 }

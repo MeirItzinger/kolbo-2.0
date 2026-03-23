@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import { createCheckoutRental, createCheckoutPurchase } from "@/api/stripe";
 import {
   Play,
@@ -14,6 +15,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import MuxPlayer from "@mux/mux-player-react";
+import { VideoPlayer } from "@/features/player/VideoPlayer";
+import { PrerollAd } from "@/features/player/PrerollAd";
 import { getChannel, getChannelPageElements, getChannelCategories } from "@/api/channels";
 import { listVideos, getVideo } from "@/api/videos";
 import { api } from "@/api/client";
@@ -151,6 +154,17 @@ export default function ChannelPage() {
     ? rawVideos
     : rawVideos?.data ?? [];
 
+  /** True if at least one video is linked to an active channel category (many-to-many). */
+  const hasVideosInCategories = videos.some((v) =>
+    (v.categories ?? []).some((c) =>
+      channelCategories.some((cc) => cc.id === c.id),
+    ),
+  );
+
+  /** Use per-category rows only when assignments exist; otherwise show one grid (avoids “empty” sections after DB migration lost links). */
+  const useCategorySectionsLayout =
+    channelCategories.length > 0 && hasVideosInCategories;
+
   const handleVideoClick = (video: Video) => {
     setSelectedVideo(video);
     setModalOpen(true);
@@ -191,8 +205,10 @@ export default function ChannelPage() {
     : null;
 
   const hasAccess = (() => {
-    if (!isAuthenticated || !detailData) return false;
-    if (detailData.isFree) return true;
+    if (!detailData) return false;
+    // Public playback (no subscription required)
+    if (detailData.isFree || detailData.freeWithAds) return true;
+    if (!isAuthenticated) return false;
     if (hasRole("SUPER_ADMIN")) return true;
     if (hasChannelSub) return true;
 
@@ -271,68 +287,75 @@ export default function ChannelPage() {
         </div>
       </div>
 
-      {/* Channel content — page builder or default grid */}
-      {pageElements.length > 0 ? (
-        <div className="mt-10 pb-16">
+      {/* Channel content — page builder elements (if any) */}
+      {pageElements.length > 0 && (
+        <div className="mt-10">
           {pageElements.map((el) => (
             <ChannelSection key={el.id} element={el} onVideoClick={handleVideoClick} />
           ))}
         </div>
-      ) : (
-        <section className="mx-auto mt-10 max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-          {videosQuery.isLoading ? (
-            <div className="flex justify-center py-12">
-              <Spinner />
-            </div>
-          ) : videos.length === 0 ? (
-            <div className="py-16 text-center">
-              <Play className="mx-auto mb-3 h-10 w-10 text-surface-600" />
-              <p className="text-surface-500">No videos available yet.</p>
-            </div>
-          ) : channelCategories.length > 0 ? (
-            <div className="space-y-10">
-              {channelCategories.map((cat) => {
-                const catVideos = videos.filter((v) => v.categoryId === cat.id);
-                if (catVideos.length === 0) return null;
-                return (
-                  <CategoryRow
-                    key={cat.id}
-                    category={cat}
-                    videos={catVideos}
-                    onVideoClick={handleVideoClick}
-                  />
-                );
-              })}
-              {(() => {
-                const uncategorized = videos.filter(
-                  (v) => !v.categoryId || !channelCategories.some((c) => c.id === v.categoryId),
-                );
-                if (uncategorized.length === 0) return null;
-                return (
-                  <CategoryRow
-                    category={{ id: "_uncategorized", name: "More Videos", slug: "more", channelId: "", sortOrder: 999, isActive: true, createdAt: "", updatedAt: "" }}
-                    videos={uncategorized}
-                    onVideoClick={handleVideoClick}
-                  />
-                );
-              })()}
-            </div>
-          ) : (
-            <>
-              <h2 className="mb-6 text-xl font-semibold text-white">Videos</h2>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {videos.map((v) => (
-                  <VideoCard
-                    key={v.id}
-                    video={v}
-                    onClick={() => handleVideoClick(v)}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </section>
       )}
+
+      {/* Category rows / default grid */}
+      <section className="mx-auto mt-10 max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
+        {videosQuery.isLoading ? (
+          <div className="flex justify-center py-12">
+            <Spinner />
+          </div>
+        ) : videos.length === 0 && pageElements.length === 0 ? (
+          <div className="py-16 text-center">
+            <Play className="mx-auto mb-3 h-10 w-10 text-surface-600" />
+            <p className="text-surface-500">No videos available yet.</p>
+          </div>
+        ) : useCategorySectionsLayout ? (
+          <div className="space-y-10">
+            {channelCategories.map((cat) => {
+              const catVideos = videos.filter((v) =>
+                (v.categories ?? []).some((c) => c.id === cat.id),
+              );
+              if (catVideos.length === 0) return null;
+              return (
+                <CategoryRow
+                  key={cat.id}
+                  category={cat}
+                  videos={catVideos}
+                  onVideoClick={handleVideoClick}
+                />
+              );
+            })}
+            {(() => {
+              const uncategorized = videos.filter(
+                (v) => {
+                  const ids = (v.categories ?? []).map((c) => c.id);
+                  if (ids.length === 0) return true;
+                  return !ids.some((id) => channelCategories.some((c) => c.id === id));
+                },
+              );
+              if (uncategorized.length === 0) return null;
+              return (
+                <CategoryRow
+                  category={{ id: "_uncategorized", name: "More Videos", slug: "more", channelId: "", sortOrder: 999, isActive: true, createdAt: "", updatedAt: "" }}
+                  videos={uncategorized}
+                  onVideoClick={handleVideoClick}
+                />
+              );
+            })()}
+          </div>
+        ) : videos.length > 0 ? (
+          <>
+            <h2 className="mb-6 text-xl font-semibold text-white">Videos</h2>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {videos.map((v) => (
+                <VideoCard
+                  key={v.id}
+                  video={v}
+                  onClick={() => handleVideoClick(v)}
+                />
+              ))}
+            </div>
+          </>
+        ) : null}
+      </section>
 
       {/* Video modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
@@ -343,16 +366,24 @@ export default function ChannelPage() {
               : "max-w-md"
           }
         >
-          {!isAuthenticated ? (
-            <AuthPrompt videoTitle={selectedVideo?.title ?? "this video"} />
-          ) : videoDetailQuery.isLoading ? (
+          {videoDetailQuery.isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Spinner />
             </div>
+          ) : !detailData ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner />
+            </div>
+          ) : !isAuthenticated &&
+            !detailData.isFree &&
+            !detailData.freeWithAds ? (
+            <AuthPrompt videoTitle={detailData.title ?? "this video"} />
           ) : hasAccess && playbackId ? (
-            <VideoPlayer
+            <ChannelModalPlayer
+              videoId={detailData.id}
               playbackId={playbackId}
-              title={detailData?.title ?? ""}
+              title={detailData.title ?? ""}
+              freeWithAds={!!detailData.freeWithAds}
             />
           ) : hasAccess && !playbackId ? (
             <VideoProcessing title={detailData?.title ?? "this video"} />
@@ -669,24 +700,171 @@ function AuthPrompt({ videoTitle }: { videoTitle: string }) {
   );
 }
 
-// ── Video Player (has access) ──────────────────────────────────────
+// ── Channel modal playback (free-with-ads uses token + optional preroll) ──
 
-function VideoPlayer({
-  playbackId,
+const PLAYBACK_API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+async function fetchPlaybackTokenForModal(videoId: string) {
+  const token = localStorage.getItem("kolbo_access_token");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const { data } = await axios.get(
+    `${PLAYBACK_API_BASE}/playback/token/${videoId}`,
+    { headers },
+  );
+  return data?.data ?? data;
+}
+
+async function fetchPrerollAdForModal(videoId: string) {
+  const { data } = await axios.get(
+    `${PLAYBACK_API_BASE}/playback/ad/${videoId}`,
+  );
+  return data?.data ?? null;
+}
+
+function ChannelModalPlayer({
+  videoId,
+  playbackId: fallbackPlaybackId,
   title,
+  freeWithAds,
 }: {
+  videoId: string;
   playbackId: string;
   title: string;
+  freeWithAds: boolean;
 }) {
+  const [showingAd, setShowingAd] = useState(true);
+  const sessionEndedRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setShowingAd(true);
+    sessionEndedRef.current = false;
+  }, [videoId]);
+
+  const tokenQuery = useQuery({
+    queryKey: ["playback-token", "modal", videoId],
+    queryFn: () => fetchPlaybackTokenForModal(videoId),
+    enabled: freeWithAds,
+  });
+
+  const adNonce = useRef(0);
+  useEffect(() => { adNonce.current++; }, [videoId]);
+
+  const adQuery = useQuery({
+    queryKey: ["preroll-ad", "modal", videoId, adNonce.current],
+    queryFn: () => fetchPrerollAdForModal(videoId),
+    enabled:
+      freeWithAds &&
+      !!tokenQuery.isSuccess &&
+      tokenQuery.data?.adMode !== "none",
+    staleTime: 0,
+    gcTime: 0,
+  });
+
+  useEffect(() => {
+    if (!freeWithAds) return;
+    const hasAd = !!adQuery.data?.playbackId;
+    if (adQuery.isFetched && !hasAd && tokenQuery.isSuccess) setShowingAd(false);
+  }, [freeWithAds, adQuery.data, adQuery.isFetched, tokenQuery.isSuccess]);
+
+  const handleAdComplete = useCallback(() => setShowingAd(false), []);
+
+  const handleHeartbeat = useCallback(() => {
+    const sid = sessionIdRef.current;
+    if (sid) {
+      api.post("/watch-sessions/heartbeat", { sessionId: sid }).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    sessionIdRef.current = tokenQuery.data?.sessionId ?? null;
+  }, [tokenQuery.data?.sessionId]);
+
+  const handleEnd = useCallback(() => {
+    const sid = sessionIdRef.current;
+    if (sid && !sessionEndedRef.current) {
+      sessionEndedRef.current = true;
+      api.post("/watch-sessions/end", { sessionId: sid }).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const sid = sessionIdRef.current;
+      if (sid && !sessionEndedRef.current) {
+        sessionEndedRef.current = true;
+        api.post("/watch-sessions/end", { sessionId: sid }).catch(() => {});
+      }
+    };
+  }, []);
+
+  if (!freeWithAds) {
+    return (
+      <div>
+        <MuxPlayer
+          playbackId={fallbackPlaybackId}
+          metadata={{ video_title: title }}
+          streamType="on-demand"
+          autoPlay
+          style={{ width: "100%", aspectRatio: "16/9" }}
+        />
+        <div className="p-4">
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
+        </div>
+      </div>
+    );
+  }
+
+  if (tokenQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (tokenQuery.isError) {
+    return (
+      <div className="p-6 text-center text-sm text-destructive">
+        Could not start playback. Try again or open the full watch page.
+      </div>
+    );
+  }
+
+  const resolvedPlaybackId =
+    tokenQuery.data?.playbackId ?? fallbackPlaybackId;
+  const muxToken = tokenQuery.data?.token ?? undefined;
+
   return (
     <div>
-      <MuxPlayer
-        playbackId={playbackId}
-        metadata={{ video_title: title }}
-        streamType="on-demand"
-        autoPlay
-        style={{ width: "100%", aspectRatio: "16/9" }}
-      />
+      {showingAd &&
+      adQuery.data?.playbackId &&
+      adQuery.data?.creativeId ? (
+        <div style={{ aspectRatio: "16/9", width: "100%" }}>
+          <PrerollAd
+            playbackId={adQuery.data.playbackId}
+            advertiser={adQuery.data.advertiser}
+            billing={{
+              videoId,
+              campaignId: adQuery.data.campaignId,
+              creativeId: adQuery.data.creativeId,
+            }}
+            onComplete={handleAdComplete}
+          />
+        </div>
+      ) : (
+        <div className="aspect-video w-full">
+          <VideoPlayer
+            playbackId={resolvedPlaybackId}
+            token={muxToken}
+            title={title}
+            onHeartbeat={handleHeartbeat}
+            onEnd={handleEnd}
+            className="h-full w-full"
+          />
+        </div>
+      )}
       <div className="p-4">
         <h3 className="text-lg font-semibold text-white">{title}</h3>
       </div>

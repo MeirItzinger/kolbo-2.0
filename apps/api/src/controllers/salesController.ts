@@ -110,13 +110,13 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     let videoTitle: string | null = null;
 
     if (log.stripeSubscriptionId) {
-      const sub = subscriptions.find(
+      const matchingSubs = subscriptions.filter(
         (s) => s.stripeSubscriptionId === log.stripeSubscriptionId
       );
-      if (sub) {
+      if (matchingSubs.length > 0) {
         type = "subscription";
-        channelName = sub.channel.name;
-        description = sub.subscriptionPlan.name;
+        channelName = matchingSubs.map((s) => s.channel?.name ?? "").filter(Boolean).join(", ");
+        description = matchingSubs.map((s) => s.subscriptionPlan?.name ?? "").filter(Boolean).join(", ");
       } else {
         const bsub = bundleSubs.find(
           (b) => b.stripeSubscriptionId === log.stripeSubscriptionId
@@ -187,8 +187,8 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
       createdAt: sub.createdAt,
       user: sub.user,
       type: "subscription",
-      description: sub.subscriptionPlan.name,
-      channelName: sub.channel.name,
+      description: sub.subscriptionPlan?.name ?? "",
+      channelName: sub.channel?.name ?? null,
       bundleName: null,
       videoTitle: null,
       status: sub.status === "ACTIVE" ? "paid" : sub.status.toLowerCase(),
@@ -371,8 +371,8 @@ export const listByChannel = asyncHandler(async (req: Request, res: Response) =>
       createdAt: sub.createdAt,
       user: sub.user,
       type: "subscription",
-      description: sub.subscriptionPlan.name,
-      channelName: sub.channel.name,
+      description: sub.subscriptionPlan?.name ?? "",
+      channelName: sub.channel?.name ?? null,
       bundleName: null,
       videoTitle: null,
       status: sub.status === "ACTIVE" ? "paid" : sub.status.toLowerCase(),

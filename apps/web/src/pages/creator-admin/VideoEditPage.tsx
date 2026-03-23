@@ -9,7 +9,9 @@ import {
   adminGetVideo,
   adminCreateVideo,
   adminUpdateVideo,
+  adminGetCreator,
   createDirectUpload,
+  uploadImage,
 } from "@/api/admin";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -38,6 +40,14 @@ export default function CreatorAdminVideoEditPage() {
   const qc = useQueryClient();
   const isNew = id === "new";
 
+  const creatorQuery = useQuery({
+    queryKey: ["creator-admin", creatorId, "profile"],
+    queryFn: () => adminGetCreator(creatorId!),
+    enabled: !!creatorId,
+  });
+
+  const creatorChannelId = (creatorQuery.data as any)?.channelCreators?.[0]?.channelId ?? "";
+
   const videoQuery = useQuery({
     queryKey: ["creator-admin", creatorId, "video", id],
     queryFn: () => adminGetVideo(id!),
@@ -58,7 +68,7 @@ export default function CreatorAdminVideoEditPage() {
           title: video.title,
           slug: video.slug,
           description: video.description ?? "",
-          tags: video.tags.join(", "),
+          tags: ((video as any).tags ?? []).join(", "),
         }
       : undefined,
   });
@@ -68,7 +78,7 @@ export default function CreatorAdminVideoEditPage() {
       adminCreateVideo({
         ...data,
         creatorProfileId: creatorId,
-        channelId: video?.channelId ?? "",
+        channelId: video?.channelId ?? creatorChannelId,
         tags: data.tags?.split(",").map((t) => t.trim()).filter(Boolean) ?? [],
         status: "draft",
       } as any),
@@ -156,20 +166,37 @@ export default function CreatorAdminVideoEditPage() {
           <Card>
             <CardHeader><CardTitle>Video File</CardTitle></CardHeader>
             <CardContent>
-              {video?.asset ? (
-                <div className="flex items-center gap-3 rounded-lg border border-surface-800 bg-surface-800/50 p-3">
-                  <Film className="h-5 w-5 text-surface-400" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-white">Current asset</p>
-                    <p className="text-xs text-surface-400">Status: {video.asset.status}</p>
-                  </div>
-                  <Badge variant={video.asset.status === "ready" ? "success" : "warning"}>
-                    {video.asset.status}
-                  </Badge>
-                </div>
-              ) : (
-                <UploadSection videoId={id!} />
-              )}
+              {(() => {
+                const asset = (video as any)?.videoAssets?.[0];
+                if (asset) {
+                  const status = asset.assetStatus?.toLowerCase() ?? asset.status ?? "unknown";
+                  return (
+                    <div className="flex items-center gap-3 rounded-lg border border-surface-800 bg-surface-800/50 p-3">
+                      <Film className="h-5 w-5 text-surface-400" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-white">Current asset</p>
+                        <p className="text-xs text-surface-400">Status: {status}</p>
+                      </div>
+                      <Badge variant={status === "ready" ? "success" : "warning"}>
+                        {status}
+                      </Badge>
+                    </div>
+                  );
+                }
+                return <UploadSection videoId={id!} />;
+              })()}
+            </CardContent>
+          </Card>
+        )}
+
+        {!isNew && video?.id && (
+          <Card>
+            <CardHeader><CardTitle>Thumbnail</CardTitle></CardHeader>
+            <CardContent>
+              <ThumbnailUploadSection
+                videoId={video.id}
+                currentUrl={(video as any).thumbnailAssets?.[0]?.imageUrl ?? null}
+              />
             </CardContent>
           </Card>
         )}
@@ -185,6 +212,78 @@ export default function CreatorAdminVideoEditPage() {
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function resolveImageUrl(url: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith("http")) return url;
+  const apiOrigin = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api$/, "");
+  return `${apiOrigin}${url}`;
+}
+
+function ThumbnailUploadSection({
+  videoId,
+  currentUrl,
+}: {
+  videoId: string;
+  currentUrl: string | null;
+}) {
+  const [preview, setPreview] = useState<string | null>(resolveImageUrl(currentUrl));
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
+
+  const handleFile = async (file: File) => {
+    setError(null);
+    setUploading(true);
+    try {
+      const { url } = await uploadImage(file);
+      await adminUpdateVideo(videoId, { thumbnailUrl: url } as any);
+      setPreview(url);
+      qc.invalidateQueries({ queryKey: ["creator-admin"] });
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err?.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {preview && (
+        <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-lg border border-surface-700 bg-surface-800">
+          <img src={preview} alt="Thumbnail" className="h-full w-full object-cover" />
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        disabled={uploading}
+        onClick={() => fileInputRef.current?.click()}
+        className="flex items-center gap-2 rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white disabled:opacity-50"
+      >
+        {uploading ? <Spinner size="sm" /> : <Upload className="h-4 w-4" />}
+        {preview ? "Replace Thumbnail" : "Upload Thumbnail"}
+      </button>
+      {error && (
+        <p className="flex items-center gap-1 text-sm text-destructive">
+          <X className="h-4 w-4" />
+          {error}
+        </p>
+      )}
     </div>
   );
 }

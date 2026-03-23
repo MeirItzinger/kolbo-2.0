@@ -289,8 +289,9 @@ async function handleSubscriptionCreated(
 
   if (meta.type === "subscription" && meta.userId && meta.planId && meta.channelId) {
     await prisma.userSubscription.upsert({
-      where: { stripeSubscriptionId: subscription.id },
+      where: { userId_subscriptionPlanId: { userId: meta.userId, subscriptionPlanId: meta.planId } },
       update: {
+        stripeSubscriptionId: subscription.id,
         status,
         currentPeriodStart: new Date(subscription.current_period_start * 1000),
         currentPeriodEnd: new Date(subscription.current_period_end * 1000),
@@ -339,17 +340,12 @@ async function handleSubscriptionUpdated(
       : null,
   };
 
-  const userSub = await prisma.userSubscription.findUnique({
+  const updatedCount = await prisma.userSubscription.updateMany({
     where: { stripeSubscriptionId: subscription.id },
+    data,
   });
 
-  if (userSub) {
-    await prisma.userSubscription.update({
-      where: { stripeSubscriptionId: subscription.id },
-      data,
-    });
-    return;
-  }
+  if (updatedCount.count > 0) return;
 
   const bundleSub = await prisma.userBundleSubscription.findUnique({
     where: { stripeSubscriptionId: subscription.id },
@@ -372,17 +368,12 @@ async function handleSubscriptionDeleted(
     cancelAtPeriodEnd: false,
   };
 
-  const userSub = await prisma.userSubscription.findUnique({
+  const updatedCount = await prisma.userSubscription.updateMany({
     where: { stripeSubscriptionId: subscription.id },
+    data: cancelData,
   });
 
-  if (userSub) {
-    await prisma.userSubscription.update({
-      where: { stripeSubscriptionId: subscription.id },
-      data: cancelData,
-    });
-    return;
-  }
+  if (updatedCount.count > 0) return;
 
   const bundleSub = await prisma.userBundleSubscription.findUnique({
     where: { stripeSubscriptionId: subscription.id },

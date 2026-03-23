@@ -5,6 +5,8 @@ interface VideoPlayerProps {
   playbackId: string;
   token?: string;
   title?: string;
+  /** @default true */
+  autoPlay?: boolean;
   onHeartbeat?: () => void;
   onEnd?: () => void;
   heartbeatIntervalMs?: number;
@@ -15,6 +17,7 @@ export function VideoPlayer({
   playbackId,
   token,
   title,
+  autoPlay = true,
   onHeartbeat,
   onEnd,
   heartbeatIntervalMs = 30_000,
@@ -45,7 +48,7 @@ export function VideoPlayer({
       tokens={token ? { playback: token } : undefined}
       metadata={{ video_title: title }}
       streamType="on-demand"
-      autoPlay
+      autoPlay={autoPlay}
       onEnded={handleEnded}
       className={className}
       style={{ width: "100%", height: "100%" }}

@@ -266,9 +266,6 @@ export async function createCheckoutSessionForRental(
   if (!option || !option.isActive) {
     throw ApiError.notFound("Rental option not found or inactive");
   }
-  if (!option.stripePriceId) {
-    throw ApiError.badRequest("Rental option is not configured for billing");
-  }
 
   const existingRental = await prisma.userRental.findFirst({
     where: {
@@ -287,7 +284,19 @@ export async function createCheckoutSessionForRental(
   return stripe.checkout.sessions.create({
     mode: "payment",
     customer: customerId,
-    line_items: [{ price: option.stripePriceId, quantity: 1 }],
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: option.currency ?? "usd",
+          unit_amount: Math.round(Number(option.price) * 100),
+          product_data: {
+            name: `Rent: ${option.video.title}`,
+            description: `${option.rentalHours}h rental access`,
+          },
+        },
+      },
+    ],
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: {
@@ -308,14 +317,11 @@ export async function createCheckoutSessionForPurchase(
 ): Promise<Stripe.Checkout.Session> {
   const option = await prisma.purchaseOption.findUnique({
     where: { id: purchaseOptionId },
-    include: { video: { select: { id: true, title: true } } },
+    include: { video: { select: { id: true, title: true, channelId: true } } },
   });
 
   if (!option || !option.isActive) {
     throw ApiError.notFound("Purchase option not found or inactive");
-  }
-  if (!option.stripePriceId) {
-    throw ApiError.badRequest("Purchase option is not configured for billing");
   }
 
   const existingPurchase = await prisma.userPurchase.findFirst({
@@ -334,7 +340,19 @@ export async function createCheckoutSessionForPurchase(
   return stripe.checkout.sessions.create({
     mode: "payment",
     customer: customerId,
-    line_items: [{ price: option.stripePriceId, quantity: 1 }],
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: option.currency ?? "usd",
+          unit_amount: Math.round(Number(option.price) * 100),
+          product_data: {
+            name: `Buy: ${option.video.title}`,
+            description: "Own forever",
+          },
+        },
+      },
+    ],
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: {

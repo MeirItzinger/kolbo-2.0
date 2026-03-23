@@ -15,6 +15,8 @@ import {
   PanelsTopLeft,
   FolderOpen,
   DollarSign,
+  Megaphone,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { adminGetChannel } from "@/api/admin";
@@ -30,6 +32,8 @@ const superAdminLinks = [
   { to: "/admin/creators", label: "Creators", icon: Banknote, end: false },
   { to: "/admin/sales", label: "Sales", icon: DollarSign, end: false },
   { to: "/admin/homepage-builder", label: "Homepage Builder", icon: PanelsTopLeft, end: false },
+  { to: "/admin/ad-campaigns", label: "Ad Campaigns", icon: Megaphone, end: false },
+  { to: "/admin/advertisers", label: "Advertisers", icon: Building2, end: false },
 ];
 
 export default function AdminLayout() {
@@ -57,6 +61,7 @@ export default function AdminLayout() {
     if (allowed.includes("SUBSCRIPTION")) {
       links.push({ to: "/admin/plans", label: "Plans", icon: CreditCard, end: false });
     }
+    links.push({ to: "/admin/sales", label: "Sales", icon: DollarSign, end: false });
     links.push({ to: "/admin/channel-page-builder", label: "Channel Page Builder", icon: PanelsTopLeft, end: false });
     return links;
   }, [isSuperAdmin, channelQuery.data]);

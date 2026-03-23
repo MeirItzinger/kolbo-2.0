@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { getVideo } from "@/api/videos";
 import { listVideos } from "@/api/videos";
+import { createCheckoutRental, createCheckoutPurchase } from "@/api/stripe";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -24,6 +25,7 @@ import type { Video } from "@/types";
 export default function VideoPage() {
   const { slug } = useParams<{ slug: string }>();
   const { isAuthenticated } = useAuth();
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
 
   const videoQuery = useQuery({
     queryKey: ["video", slug],
@@ -69,8 +71,53 @@ export default function VideoPage() {
     );
   }
 
-  const hasPlaybackAccess = video.isFree || isAuthenticated;
-  const canPlay = video.asset?.muxPlaybackId && hasPlaybackAccess;
+  const playbackId = video.videoAssets?.[0]?.muxPlaybackId ?? null;
+  const hasPlaybackAccess = video.isFree || video.freeWithAds || isAuthenticated;
+  const canPlay = !!playbackId && hasPlaybackAccess;
+
+  const thumbnailUrl =
+    (video as any).thumbnailUrl ??
+    video.thumbnailAssets?.[0]?.imageUrl ??
+    null;
+
+  const tags = (video as any).tags ??
+    video.tagAssignments?.map((ta) => ta.tag.name) ??
+    [];
+
+  const rentalOption = video.rentalOptions?.[0] ?? null;
+  const purchaseOption = video.purchaseOptions?.[0] ?? null;
+
+  const handleRent = async (rentalOptionId: string) => {
+    setCheckoutLoading(rentalOptionId);
+    try {
+      const { url } = await createCheckoutRental({
+        rentalOptionId,
+        successUrl: `${window.location.origin}/checkout/success?type=rental&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: window.location.href,
+      });
+      if (url) window.location.href = url;
+    } catch (err: any) {
+      alert(err?.response?.data?.message ?? "Failed to start checkout");
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
+  const handlePurchase = async (purchaseOptionId: string) => {
+    setCheckoutLoading(purchaseOptionId);
+    try {
+      const { url } = await createCheckoutPurchase({
+        purchaseOptionId,
+        successUrl: `${window.location.origin}/checkout/success?type=purchase&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: window.location.href,
+      });
+      if (url) window.location.href = url;
+    } catch (err: any) {
+      alert(err?.response?.data?.message ?? "Failed to start checkout");
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
 
   const formatDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -85,9 +132,9 @@ export default function VideoPage() {
       {/* Hero poster area */}
       <div className="relative">
         <div className="aspect-[21/9] max-h-[500px] w-full bg-surface-900">
-          {video.thumbnailUrl ? (
+          {thumbnailUrl ? (
             <img
-              src={video.thumbnailUrl}
+              src={thumbnailUrl}
               alt={video.title}
               className="h-full w-full object-cover"
             />
@@ -106,13 +153,16 @@ export default function VideoPage() {
               {/* Badges */}
               <div className="mb-3 flex flex-wrap gap-2">
                 {video.isFree && <Badge>Free</Badge>}
+                {video.freeWithAds && !video.isFree && (
+                  <Badge variant="warning">Free with Ads</Badge>
+                )}
                 {video.channel && (
                   <Badge variant="secondary">
                     <Tv className="mr-1 h-3 w-3" />
                     {video.channel.name}
                   </Badge>
                 )}
-                {video.status === "ready" && (
+                {video.status === "PUBLISHED" && (
                   <Badge variant="success">Available</Badge>
                 )}
               </div>
@@ -123,10 +173,10 @@ export default function VideoPage() {
 
               {/* Metadata */}
               <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-surface-400">
-                {video.duration && (
+                {video.durationSeconds && (
                   <span className="flex items-center gap-1">
                     <Clock className="h-4 w-4" />
-                    {formatDuration(video.duration)}
+                    {formatDuration(video.durationSeconds)}
                   </span>
                 )}
                 {video.publishedAt && (
@@ -136,7 +186,7 @@ export default function VideoPage() {
                   </span>
                 )}
                 {video.creatorProfile && (
-                  <span>By {video.creatorProfile.name}</span>
+                  <span>By {video.creatorProfile.displayName}</span>
                 )}
               </div>
 
@@ -178,13 +228,13 @@ export default function VideoPage() {
             )}
 
             {/* Tags */}
-            {video.tags.length > 0 && (
+            {tags.length > 0 && (
               <div className="mb-8">
                 <h3 className="mb-3 text-sm font-semibold text-surface-300">
                   Tags
                 </h3>
                 <div className="flex flex-wrap gap-2">
-                  {video.tags.map((tag) => (
+                  {tags.map((tag: string) => (
                     <Badge key={tag} variant="secondary">
                       {tag}
                     </Badge>
@@ -196,7 +246,7 @@ export default function VideoPage() {
 
           {/* Sidebar - access options */}
           <div className="space-y-4">
-            {!video.isFree && !isAuthenticated && (
+            {!video.isFree && !video.freeWithAds && !isAuthenticated && (
               <div className="rounded-xl border border-surface-800 bg-surface-900 p-5">
                 <h3 className="mb-3 font-semibold text-white">
                   Get Access
@@ -219,40 +269,44 @@ export default function VideoPage() {
               </div>
             )}
 
-            {video.rentalOption && (
+            {rentalOption && (
               <div className="rounded-xl border border-surface-800 bg-surface-900 p-5">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold text-white">Rent</h3>
                     <p className="text-sm text-surface-400">
-                      {video.rentalOption.durationHours}h access
+                      {(rentalOption as any).rentalHours ?? (rentalOption as any).durationHours}h access
                     </p>
                   </div>
                   <span className="text-lg font-bold text-white">
-                    {formatCurrency(video.rentalOption.price)}
+                    {formatCurrency(Number(rentalOption.price))}
                   </span>
                 </div>
-                <Button
-                  variant="outline"
-                  className="mt-3 w-full"
-                  asChild={isAuthenticated}
-                >
-                  {isAuthenticated ? (
-                    <Link to={`/checkout/rental/${video.id}`}>
-                      <ShoppingCart className="h-4 w-4" />
-                      Rent Now
-                    </Link>
-                  ) : (
-                    <>
+                {isAuthenticated ? (
+                  <Button
+                    variant="outline"
+                    className="mt-3 w-full"
+                    disabled={checkoutLoading === rentalOption.id}
+                    onClick={() => handleRent(rentalOption.id)}
+                  >
+                    {checkoutLoading === rentalOption.id ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      <><ShoppingCart className="h-4 w-4" />Rent Now</>
+                    )}
+                  </Button>
+                ) : (
+                  <Button variant="outline" className="mt-3 w-full" asChild>
+                    <Link to="/login">
                       <Lock className="h-4 w-4" />
                       Sign in to Rent
-                    </>
-                  )}
-                </Button>
+                    </Link>
+                  </Button>
+                )}
               </div>
             )}
 
-            {video.purchaseOption && (
+            {purchaseOption && (
               <div className="rounded-xl border border-surface-800 bg-surface-900 p-5">
                 <div className="flex items-center justify-between">
                   <div>
@@ -260,25 +314,29 @@ export default function VideoPage() {
                     <p className="text-sm text-surface-400">Own forever</p>
                   </div>
                   <span className="text-lg font-bold text-white">
-                    {formatCurrency(video.purchaseOption.price)}
+                    {formatCurrency(Number(purchaseOption.price))}
                   </span>
                 </div>
-                <Button
-                  className="mt-3 w-full"
-                  asChild={isAuthenticated}
-                >
-                  {isAuthenticated ? (
-                    <Link to={`/checkout/purchase/${video.id}`}>
-                      <ShoppingCart className="h-4 w-4" />
-                      Buy Now
-                    </Link>
-                  ) : (
-                    <>
+                {isAuthenticated ? (
+                  <Button
+                    className="mt-3 w-full"
+                    disabled={checkoutLoading === purchaseOption.id}
+                    onClick={() => handlePurchase(purchaseOption.id)}
+                  >
+                    {checkoutLoading === purchaseOption.id ? (
+                      <Spinner size="sm" />
+                    ) : (
+                      <><ShoppingCart className="h-4 w-4" />Buy Now</>
+                    )}
+                  </Button>
+                ) : (
+                  <Button className="mt-3 w-full" asChild>
+                    <Link to="/login">
                       <Lock className="h-4 w-4" />
                       Sign in to Buy
-                    </>
-                  )}
-                </Button>
+                    </Link>
+                  </Button>
+                )}
               </div>
             )}
 
@@ -343,36 +401,43 @@ function RelatedSection({ videos }: { videos: Video[] }) {
           ref={scrollRef}
           className="flex gap-4 overflow-x-auto pb-2 scrollbar-none"
         >
-          {videos.map((video) => (
-            <Link
-              key={video.id}
-              to={`/videos/${video.slug}`}
-              className="group/card w-[220px] shrink-0 sm:w-[260px]"
-            >
-              <div className="relative aspect-video overflow-hidden rounded-lg bg-surface-800">
-                {video.thumbnailUrl ? (
-                  <img
-                    src={video.thumbnailUrl}
-                    alt={video.title}
-                    className="h-full w-full object-cover transition-transform group-hover/card:scale-105"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center">
-                    <Play className="h-8 w-8 text-surface-600" />
-                  </div>
-                )}
-                {video.duration && (
-                  <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-medium text-white">
-                    {Math.floor(video.duration / 60)}:
-                    {String(video.duration % 60).padStart(2, "0")}
-                  </span>
-                )}
-              </div>
-              <h3 className="mt-2 line-clamp-2 text-sm font-medium text-surface-200 group-hover/card:text-white">
-                {video.title}
-              </h3>
-            </Link>
-          ))}
+          {videos.map((video) => {
+            const thumb =
+              (video as any).thumbnailUrl ??
+              video.thumbnailAssets?.[0]?.imageUrl ??
+              null;
+            const dur = video.durationSeconds ?? null;
+            return (
+              <Link
+                key={video.id}
+                to={`/videos/${video.slug}`}
+                className="group/card w-[220px] shrink-0 sm:w-[260px]"
+              >
+                <div className="relative aspect-video overflow-hidden rounded-lg bg-surface-800">
+                  {thumb ? (
+                    <img
+                      src={thumb}
+                      alt={video.title}
+                      className="h-full w-full object-cover transition-transform group-hover/card:scale-105"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center">
+                      <Play className="h-8 w-8 text-surface-600" />
+                    </div>
+                  )}
+                  {dur && (
+                    <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-medium text-white">
+                      {Math.floor(dur / 60)}:
+                      {String(dur % 60).padStart(2, "0")}
+                    </span>
+                  )}
+                </div>
+                <h3 className="mt-2 line-clamp-2 text-sm font-medium text-surface-200 group-hover/card:text-white">
+                  {video.title}
+                </h3>
+              </Link>
+            );
+          })}
         </div>
         <button
           type="button"

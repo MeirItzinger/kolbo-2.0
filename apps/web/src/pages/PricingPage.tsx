@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Tv, ArrowLeft } from "lucide-react";
 import { getChannel } from "@/api/channels";
 import { useAuth } from "@/hooks/useAuth";
+import { createCheckoutSubscription } from "@/api/stripe";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
@@ -16,8 +17,30 @@ type StreamTier = "STREAMS_3" | "STREAMS_5";
 export default function PricingPage() {
   const { channelSlug } = useParams<{ channelSlug: string }>();
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [interval, setInterval] = useState<Interval>("MONTHLY");
   const [streamTier, setStreamTier] = useState<StreamTier>("STREAMS_3");
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
+
+  async function handleSubscribe(_plan: SubscriptionPlan, variant: PlanPriceVariant) {
+    if (!isAuthenticated) {
+      navigate("/login", { state: { from: { pathname: `/pricing/${channelSlug}` } } });
+      return;
+    }
+    try {
+      setCheckingOut(variant.id);
+      const result = await createCheckoutSubscription({
+        variantId: variant.id,
+        successUrl: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`,
+        cancelUrl: window.location.href,
+      });
+      window.location.href = result.url;
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCheckingOut(null);
+    }
+  }
 
   const channelQuery = useQuery({
     queryKey: ["channel", channelSlug],
@@ -200,14 +223,14 @@ export default function PricingPage() {
                 <Button
                   className="mt-6 w-full"
                   variant={isPopular ? "default" : "outline"}
-                  asChild={isAuthenticated}
-                  disabled={!isAuthenticated || price == null}
+                  disabled={price == null || checkingOut === variant?.id}
+                  onClick={() => variant && handleSubscribe(plan, variant)}
                 >
-                  {isAuthenticated ? (
-                    <Link to="/signup">Subscribe</Link>
-                  ) : (
-                    "Sign in to Subscribe"
-                  )}
+                  {checkingOut === variant?.id
+                    ? "Redirecting…"
+                    : isAuthenticated
+                    ? "Subscribe"
+                    : "Sign in to Subscribe"}
                 </Button>
               </div>
             );

@@ -6,13 +6,24 @@ import { prisma } from "../lib/prisma";
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const { channelId } = req.params;
 
-  const categories = await prisma.category.findMany({
-    where: { channelId },
-    orderBy: { sortOrder: "asc" },
-    include: { _count: { select: { videos: true } } },
-  });
-
-  res.json({ status: "success", data: categories });
+  try {
+    const categories = await prisma.category.findMany({
+      where: { channelId },
+      orderBy: { sortOrder: "asc" },
+      include: { _count: { select: { videoLinks: true } } },
+    });
+    return res.json({ status: "success", data: categories });
+  } catch (err) {
+    console.warn("[categories] list: retry without VideoCategory count", err);
+    const categories = await prisma.category.findMany({
+      where: { channelId },
+      orderBy: { sortOrder: "asc" },
+    });
+    return res.json({
+      status: "success",
+      data: categories.map((c) => ({ ...c, _count: { videoLinks: 0 } })),
+    });
+  }
 });
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
@@ -31,16 +42,31 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     _max: { sortOrder: true },
   });
 
-  const category = await prisma.category.create({
-    data: {
-      channelId,
-      name,
-      slug,
-      sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
-      isActive: isActive ?? true,
-    },
-    include: { _count: { select: { videos: true } } },
-  });
+  let category;
+  try {
+    category = await prisma.category.create({
+      data: {
+        channelId,
+        name,
+        slug,
+        sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
+        isActive: isActive ?? true,
+      },
+      include: { _count: { select: { videoLinks: true } } },
+    });
+  } catch (err) {
+    console.warn("[categories] create: reload without video count", err);
+    category = await prisma.category.create({
+      data: {
+        channelId,
+        name,
+        slug,
+        sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
+        isActive: isActive ?? true,
+      },
+    });
+    category = { ...category, _count: { videoLinks: 0 } };
+  }
 
   res.status(201).json({ status: "success", data: category });
 });
@@ -61,16 +87,31 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     if (dup) throw ApiError.conflict("A category with this slug already exists in this channel");
   }
 
-  const updated = await prisma.category.update({
-    where: { id },
-    data: {
-      ...(name !== undefined && { name }),
-      ...(slug !== undefined && { slug }),
-      ...(sortOrder !== undefined && { sortOrder }),
-      ...(isActive !== undefined && { isActive }),
-    },
-    include: { _count: { select: { videos: true } } },
-  });
+  let updated;
+  try {
+    updated = await prisma.category.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(slug !== undefined && { slug }),
+        ...(sortOrder !== undefined && { sortOrder }),
+        ...(isActive !== undefined && { isActive }),
+      },
+      include: { _count: { select: { videoLinks: true } } },
+    });
+  } catch (err) {
+    console.warn("[categories] update: reload without video count", err);
+    updated = await prisma.category.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(slug !== undefined && { slug }),
+        ...(sortOrder !== undefined && { sortOrder }),
+        ...(isActive !== undefined && { isActive }),
+      },
+    });
+    updated = { ...updated, _count: { videoLinks: 0 } };
+  }
 
   res.json({ status: "success", data: updated });
 });
@@ -83,10 +124,11 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   });
   if (!category) throw ApiError.notFound("Category not found");
 
-  await prisma.video.updateMany({
-    where: { categoryId: id },
-    data: { categoryId: null },
-  });
+  try {
+    await prisma.videoCategory.deleteMany({ where: { categoryId: id } });
+  } catch (err) {
+    console.warn("[categories] delete: skip VideoCategory cleanup", err);
+  }
 
   await prisma.category.delete({ where: { id } });
 

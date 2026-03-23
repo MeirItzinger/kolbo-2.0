@@ -12,7 +12,13 @@ const app = express();
 // ─── CORS ───────────────────────────────────────────────
 app.use(
   cors({
-    origin: env.CLIENT_URL,
+    origin: (origin, callback) => {
+      if (!origin || origin === env.CLIENT_URL || /^http:\/\/localhost:\d+$/.test(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
@@ -51,10 +57,22 @@ app.use((_req, res) => {
 app.use(errorHandler);
 
 // ─── Start server ───────────────────────────────────────
-app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
   console.log(
     `[kolbo-api] Server running on port ${env.PORT} (${env.NODE_ENV})`
   );
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`[kolbo-api] Port ${env.PORT} already in use – retrying in 2s…`);
+    setTimeout(() => {
+      server.close();
+      server.listen(env.PORT);
+    }, 2000);
+  } else {
+    throw err;
+  }
 });
 
 export default app;

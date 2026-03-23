@@ -114,8 +114,10 @@ export default function AdminCategoriesPage() {
   );
 }
 
-function CategoriesInner({ channelId }: { channelId: string }) {
+export function CategoriesInner({ channelId }: { channelId: string }) {
   const qc = useQueryClient();
+  const { hasRole } = useAuth();
+  const isCreatorAdmin = hasRole("CREATOR_ADMIN") && !hasRole("SUPER_ADMIN") && !hasRole("CHANNEL_ADMIN");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
@@ -177,15 +179,17 @@ function CategoriesInner({ channelId }: { channelId: string }) {
             <p className="mt-1 text-sm text-surface-400">{channelQuery.data.name}</p>
           )}
         </div>
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setShowForm(true);
-          }}
-        >
-          <Plus className="h-4 w-4" />
-          Add Category
-        </Button>
+        {!isCreatorAdmin && (
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setShowForm(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Add Category
+          </Button>
+        )}
       </div>
 
       {categoriesQuery.isLoading ? (
@@ -296,7 +300,7 @@ function SortableCategoryRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const videoCount = category._count?.videos ?? 0;
+  const videoCount = category._count?.videoLinks ?? category._count?.videos ?? 0;
 
   return (
     <div

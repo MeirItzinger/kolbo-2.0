@@ -8,9 +8,9 @@ import type {
 } from "@/types";
 import { api } from "./client";
 
-export async function getSubscriptions(): Promise<UserSubscription[]> {
+export async function getSubscriptions(): Promise<{ channelSubscriptions: any[]; bundleSubscriptions: any[] }> {
   const { data } = await api.get("/account/subscriptions");
-  return data;
+  return data?.data ?? { channelSubscriptions: [], bundleSubscriptions: [] };
 }
 
 export async function cancelSubscription(subscriptionId: string): Promise<void> {

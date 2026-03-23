@@ -29,4 +29,11 @@ router.delete(
   creatorController.remove
 );
 
+router.post(
+  "/:id/connect-onboarding",
+  authenticate,
+  requireRole("SUPER_ADMIN", "CHANNEL_ADMIN"),
+  creatorController.createConnectOnboardingLink
+);
+
 export default router;

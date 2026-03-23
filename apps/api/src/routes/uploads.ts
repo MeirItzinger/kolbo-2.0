@@ -37,7 +37,7 @@ const router = Router();
 router.post(
   "/image",
   authenticate,
-  requireRole("SUPER_ADMIN", "CHANNEL_ADMIN"),
+  requireRole("SUPER_ADMIN", "CHANNEL_ADMIN", "CREATOR_ADMIN"),
   upload.single("file"),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.file) throw ApiError.badRequest("No file uploaded");
