@@ -65,7 +65,14 @@ app.get("/health", healthHandler);
 app.get("/api/health", healthHandler);
 
 // ─── Static uploads ──────────────────────────────────────
-app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
+const uploadDir = path.resolve(__dirname, "../uploads");
+/** Local / traditional hosting: `/uploads/*` */
+app.use("/uploads", express.static(uploadDir));
+/**
+ * Same files under `/api/uploads/*` so Vercel can reach them: only `/api/*` is routed to
+ * serverless; `vercel.json` sends everything else (including `/uploads/*`) to SPA `index.html`.
+ */
+app.use("/api/uploads", express.static(uploadDir));
 
 // ─── API routes ─────────────────────────────────────────
 app.use("/api", apiRoutes);

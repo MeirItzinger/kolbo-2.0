@@ -20,14 +20,32 @@ api.interceptors.request.use((config) => {
 let refreshPromise: Promise<string> | null = null;
 
 /**
- * Origin where `/uploads/*` is served (API base URL without `/api`).
+ * Origin where uploaded files are served (API base URL without trailing `/api`).
  * In production without VITE_API_URL, same tab origin (monorepo on Vercel).
  */
 function uploadsAssetBase(): string {
   const vite = import.meta.env.VITE_API_URL;
-  if (vite) return vite.replace(/\/api$/, "");
+  if (vite) {
+    const stripped = vite.replace(/\/api$/, "");
+    if (stripped) return stripped;
+    if (typeof window !== "undefined") return window.location.origin;
+  }
   if (typeof window !== "undefined") return window.location.origin;
   return "";
+}
+
+/**
+ * On Vercel, `vercel.json` sends `/uploads/*` to the SPA, so those URLs return HTML.
+ * The API serverless app only receives `/api/*`, so public files are mounted at `/api/uploads/*`.
+ * Use that when the asset origin is the same as the page (single deployment).
+ */
+function mapUploadsPathForSameOriginDeploy(pathname: string): string {
+  if (!pathname.startsWith("/uploads/")) return pathname;
+  if (!import.meta.env.PROD) return pathname;
+  if (typeof window === "undefined") return pathname;
+  const base = uploadsAssetBase();
+  if (!base || base !== window.location.origin) return pathname;
+  return `/api${pathname}`;
 }
 
 /**
@@ -42,7 +60,8 @@ function rewriteLocalDevUploadsUrl(urlString: string): string | null {
     if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1") return null;
     const base = uploadsAssetBase();
     if (!base) return null;
-    return `${base}${u.pathname}`;
+    const path = mapUploadsPathForSameOriginDeploy(u.pathname);
+    return `${base}${path}`;
   } catch {
     return null;
   }
@@ -51,11 +70,27 @@ function rewriteLocalDevUploadsUrl(urlString: string): string | null {
 /** Absolute URL for display (img src): Blob/CDN or API origin + /uploads path. */
 export function resolveUploadedAssetUrl(pathOrUrl: string): string {
   if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
-    return rewriteLocalDevUploadsUrl(pathOrUrl) ?? pathOrUrl;
+    const fromLocal = rewriteLocalDevUploadsUrl(pathOrUrl);
+    if (fromLocal) return fromLocal;
+    try {
+      const u = new URL(pathOrUrl);
+      if (
+        u.pathname.startsWith("/uploads/") &&
+        typeof window !== "undefined" &&
+        import.meta.env.PROD &&
+        u.origin === window.location.origin
+      ) {
+        return `${u.origin}${mapUploadsPathForSameOriginDeploy(u.pathname)}`;
+      }
+    } catch {
+      /* ignore */
+    }
+    return pathOrUrl;
   }
   const base = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
   const origin = uploadsAssetBase();
-  return origin ? `${origin}${base}` : base;
+  const path = mapUploadsPathForSameOriginDeploy(base);
+  return origin ? `${origin}${path}` : path;
 }
 
 function resolveUploads(value: unknown): unknown {
@@ -64,7 +99,8 @@ function resolveUploads(value: unknown): unknown {
     if (fromLocal) return fromLocal;
     if (value.startsWith("/uploads/")) {
       const origin = uploadsAssetBase();
-      return origin ? `${origin}${value}` : value;
+      const path = mapUploadsPathForSameOriginDeploy(value);
+      return origin ? `${origin}${path}` : path;
     }
     return value;
   }
