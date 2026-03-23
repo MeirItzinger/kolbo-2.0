@@ -50,4 +50,12 @@ export const env = {
   get isTest() {
     return this.NODE_ENV === "test";
   },
+
+  /**
+   * When true, preroll selection includes DRAFT campaigns (uploaded creative, not yet admin-approved).
+   * Use only on local/staging. Production should stay false so unapproved ads never run.
+   */
+  get adAllowDraftCampaignPreroll() {
+    return optional("AD_ALLOW_DRAFT_PREROLL", "false").toLowerCase() === "true";
+  },
 } as const;

@@ -79,7 +79,11 @@ export default function WatchPage() {
   const adQuery = useQuery({
     queryKey: ["preroll-ad", video?.id, adNonce.current],
     queryFn: () => getPrerollAd(video!.id),
-    enabled: !!video?.id && tokenQuery.data?.adMode !== "none",
+    /** Wait for playback token so adMode matches the same access decision (avoids racing preroll before token). */
+    enabled:
+      !!video?.id &&
+      tokenQuery.isSuccess &&
+      tokenQuery.data.adMode !== "none",
     staleTime: 0,
     gcTime: 0,
   });

@@ -1,7 +1,16 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type CampaignStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { stripe } from "../../lib/stripe";
 import { ApiError } from "../../utils/apiError";
+import { env } from "../../config/env";
+
+function prerollCampaignStatuses(): CampaignStatus[] {
+  const base: CampaignStatus[] = ["APPROVED", "ACTIVE"];
+  if (env.adAllowDraftCampaignPreroll) {
+    return ["DRAFT", ...base];
+  }
+  return base;
+}
 
 const SETTINGS_ID = "singleton";
 const USD_MIN_CHARGE_CENTS = 50;
@@ -25,7 +34,7 @@ export async function findPrerollCreativeForVideo(videoId: string) {
       assetStatus: "READY",
       muxPlaybackId: { not: null },
       campaign: {
-        status: { in: ["APPROVED", "ACTIVE"] },
+        status: { in: prerollCampaignStatuses() },
         AND: [
           {
             OR: [
@@ -57,7 +66,20 @@ export async function findPrerollCreativeForVideo(videoId: string) {
     },
   });
 
-  if (eligible.length === 0) return null;
+  if (eligible.length === 0) {
+    if (env.isDev) {
+      const readyCount = await prisma.adCreative.count({
+        where: { assetStatus: "READY", muxPlaybackId: { not: null } },
+      });
+      console.warn(
+        `[ad-select] no preroll creative for video ${videoId} (channel ${video.channelId}). ` +
+          `READY creatives with playback: ${readyCount}. ` +
+          `Campaigns must be APPROVED or ACTIVE (or set AD_ALLOW_DRAFT_PREROLL=true for DRAFT in dev). ` +
+          `If the campaign has channel targets, this channel must be included.`
+      );
+    }
+    return null;
+  }
   const picked = eligible[Math.floor(Math.random() * eligible.length)];
   console.log(
     `[ad-select] ${eligible.length} eligible creative(s), picked ${picked.id} ` +
@@ -154,7 +176,7 @@ export async function chargeAdView(
     throw ApiError.badRequest("Creative not found or does not match campaign");
   }
 
-  if (!["APPROVED", "ACTIVE"].includes(creative.campaign.status)) {
+  if (!prerollCampaignStatuses().includes(creative.campaign.status)) {
     throw ApiError.badRequest("Campaign is not active");
   }
 
