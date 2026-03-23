@@ -40,7 +40,7 @@ export default function AdvertiserDashboardPage() {
   const handleDelete = (campaignId: string, name: string) => {
     if (
       !confirm(
-        `Delete campaign "${name}"? This cannot be undone for draft, rejected, or pending-review campaigns.`
+        `Delete campaign "${name}"? This cannot be undone.`
       )
     ) {
       return;
@@ -86,7 +86,8 @@ export default function AdvertiserDashboardPage() {
             const canDelete =
               c.status === "DRAFT" ||
               c.status === "REJECTED" ||
-              c.status === "PENDING_REVIEW";
+              c.status === "PENDING_REVIEW" ||
+              c.status === "APPROVED";
             return (
               <Card
                 key={c.id}

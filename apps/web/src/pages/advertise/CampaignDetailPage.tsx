@@ -281,9 +281,12 @@ export default function CampaignDetailPage() {
   }
 
   const canEdit = ["DRAFT", "REJECTED"].includes(campaign.status);
-  const canDeleteCampaign = ["DRAFT", "REJECTED", "PENDING_REVIEW"].includes(
-    campaign.status
-  );
+  const canDeleteCampaign = [
+    "DRAFT",
+    "REJECTED",
+    "PENDING_REVIEW",
+    "APPROVED",
+  ].includes(campaign.status);
   const readyCreatives =
     campaign.creatives?.filter((c) => c.assetStatus === "READY") ?? [];
   const canSubmit = canEdit && readyCreatives.length > 0;

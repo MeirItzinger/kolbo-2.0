@@ -252,6 +252,7 @@ const ADVERTISER_DELETABLE_STATUSES = new Set([
   "DRAFT",
   "REJECTED",
   "PENDING_REVIEW",
+  "APPROVED",
 ]);
 
 export async function deleteCampaign(
@@ -267,7 +268,7 @@ export async function deleteCampaign(
     throw ApiError.forbidden("Not your campaign");
   if (!ADVERTISER_DELETABLE_STATUSES.has(campaign.status)) {
     throw ApiError.badRequest(
-      "Only draft, rejected, or pending-review campaigns can be deleted"
+      "This campaign status cannot be deleted from the advertiser portal"
     );
   }
 
