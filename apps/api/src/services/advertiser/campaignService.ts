@@ -21,40 +21,24 @@ interface CreateCampaignInput {
 }
 
 /**
- * Returns channels that have at least one published video with ad-supported
- * content (freeWithAds, hasPrerollAds, or hasMidrollAds), or whose
- * allowedAccessTypes include FREE_WITH_ADS, or that have subscription plans
- * with a WITH_ADS price variant.
+ * Returns active channels that have at least one published video with ad
+ * inventory (freeWithAds, hasPrerollAds, or hasMidrollAds). Channels with
+ * zero such videos are excluded so the picker only shows real placement options.
  */
 export async function getAdEligibleChannels() {
   return prisma.channel.findMany({
     where: {
       isActive: true,
-      OR: [
-        {
-          videos: {
-            some: {
-              status: "PUBLISHED",
-              OR: [
-                { freeWithAds: true },
-                { hasPrerollAds: true },
-                { hasMidrollAds: true },
-              ],
-            },
-          },
+      videos: {
+        some: {
+          status: "PUBLISHED",
+          OR: [
+            { freeWithAds: true },
+            { hasPrerollAds: true },
+            { hasMidrollAds: true },
+          ],
         },
-        {
-          allowedAccessTypes: { has: "FREE_WITH_ADS" },
-        },
-        {
-          subscriptionPlans: {
-            some: {
-              isActive: true,
-              priceVariants: { some: { adTier: "WITH_ADS", isActive: true } },
-            },
-          },
-        },
-      ],
+      },
     },
     orderBy: { name: "asc" },
     select: {
