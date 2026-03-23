@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
+import { ApiError } from "../utils/apiError";
 import * as campaignService from "../services/advertiser/campaignService";
 
 export const adEligibleChannels = asyncHandler(async (_req: Request, res: Response) => {
@@ -58,4 +59,27 @@ export const upload = asyncHandler(async (req: Request, res: Response) => {
     req.body.fileName
   );
   res.json({ status: "success", data: result });
+});
+
+export const deleteCreative = asyncHandler(async (req: Request, res: Response) => {
+  await campaignService.deleteAdCreative(
+    req.params.id,
+    req.params.creativeId,
+    req.advertiser!.id
+  );
+  res.json({ status: "success", data: { deleted: true } });
+});
+
+export const patchCreative = asyncHandler(async (req: Request, res: Response) => {
+  const { fileName } = req.body as { fileName?: string | null };
+  if (!("fileName" in (req.body ?? {}))) {
+    throw ApiError.badRequest("fileName is required (use null or empty string to clear)");
+  }
+  const creative = await campaignService.updateAdCreative(
+    req.params.id,
+    req.params.creativeId,
+    req.advertiser!.id,
+    { fileName }
+  );
+  res.json({ status: "success", data: creative });
 });

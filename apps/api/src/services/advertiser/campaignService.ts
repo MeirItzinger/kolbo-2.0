@@ -323,6 +323,65 @@ export async function createAdUpload(
   };
 }
 
+export async function deleteAdCreative(
+  campaignId: string,
+  creativeId: string,
+  advertiserId: string
+) {
+  const campaign = await prisma.adCampaign.findUnique({
+    where: { id: campaignId },
+  });
+
+  if (!campaign) throw ApiError.notFound("Campaign not found");
+  if (campaign.advertiserId !== advertiserId)
+    throw ApiError.forbidden("Not your campaign");
+  if (!["DRAFT", "REJECTED"].includes(campaign.status))
+    throw ApiError.badRequest(
+      "Can only remove video ads while the campaign is in draft or rejected"
+    );
+
+  const creative = await prisma.adCreative.findFirst({
+    where: { id: creativeId, campaignId },
+  });
+  if (!creative) throw ApiError.notFound("Video ad not found");
+
+  await prisma.adCreative.delete({ where: { id: creativeId } });
+}
+
+export async function updateAdCreative(
+  campaignId: string,
+  creativeId: string,
+  advertiserId: string,
+  input: { fileName?: string | null }
+) {
+  const campaign = await prisma.adCampaign.findUnique({
+    where: { id: campaignId },
+  });
+
+  if (!campaign) throw ApiError.notFound("Campaign not found");
+  if (campaign.advertiserId !== advertiserId)
+    throw ApiError.forbidden("Not your campaign");
+  if (!["DRAFT", "REJECTED"].includes(campaign.status))
+    throw ApiError.badRequest(
+      "Can only edit video ads while the campaign is in draft or rejected"
+    );
+
+  const creative = await prisma.adCreative.findFirst({
+    where: { id: creativeId, campaignId },
+  });
+  if (!creative) throw ApiError.notFound("Video ad not found");
+
+  if (input.fileName !== undefined) {
+    const trimmed = input.fileName?.trim();
+    return prisma.adCreative.update({
+      where: { id: creativeId },
+      data: { fileName: trimmed || null },
+    });
+  }
+
+  return creative;
+}
+
 async function pollAdUpload(muxUploadId: string, creativeId: string) {
   const MAX_ATTEMPTS = 120;
   const INTERVAL_MS = 5000;

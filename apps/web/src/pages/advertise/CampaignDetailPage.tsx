@@ -1,25 +1,29 @@
-import { useState, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Upload,
-  CheckCircle,
   XCircle,
-  Clock,
   Send,
   MapPin,
   Users,
   DollarSign,
   Film,
+  Tv,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import {
   getCampaign,
   submitCampaign,
   getAdUploadUrl,
+  deleteAdCreative,
+  updateAdCreative,
 } from "@/api/advertiser";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import {
   Card,
@@ -28,7 +32,11 @@ import {
   CardTitle,
 } from "@/components/ui/Card";
 import { formatCurrency } from "@/lib/utils";
-import type { CampaignStatus, AdCreativeStatus } from "@/types";
+import type {
+  CampaignStatus,
+  AdCreativeStatus,
+  AdCreative,
+} from "@/types";
 
 const statusVariant: Record<CampaignStatus, "default" | "success" | "warning" | "secondary" | "destructive" | "outline"> = {
   DRAFT: "secondary",
@@ -48,6 +56,155 @@ const creativeStatusLabel: Record<AdCreativeStatus, string> = {
   READY: "Ready",
   ERRORED: "Error",
 };
+
+function CreativeRow({
+  campaignId,
+  creative,
+  canEdit,
+}: {
+  campaignId: string;
+  creative: AdCreative;
+  canEdit: boolean;
+}) {
+  const qc = useQueryClient();
+  const [label, setLabel] = useState(creative.fileName ?? "");
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    setLabel(creative.fileName ?? "");
+  }, [creative.id, creative.fileName]);
+
+  const patchMutation = useMutation({
+    mutationFn: () =>
+      updateAdCreative(campaignId, creative.id, {
+        fileName: label.trim() || null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["advertiser", "campaigns", campaignId] });
+      setEditing(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteAdCreative(campaignId, creative.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["advertiser", "campaigns", campaignId] });
+    },
+  });
+
+  const handleDelete = () => {
+    if (
+      !confirm(
+        "Remove this video ad? You can upload a new file afterward. Billing history for past impressions is kept."
+      )
+    ) {
+      return;
+    }
+    deleteMutation.mutate();
+  };
+
+  return (
+    <div className="rounded-lg border border-surface-700 bg-surface-800/50 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <Film className="mt-0.5 h-5 w-5 shrink-0 text-surface-500" />
+          <div className="min-w-0 flex-1">
+            {canEdit && editing ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="Display name (optional)"
+                  className="max-w-xs"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={patchMutation.isPending}
+                  onClick={() => patchMutation.mutate()}
+                >
+                  {patchMutation.isPending ? <Spinner size="sm" /> : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setLabel(creative.fileName ?? "");
+                    setEditing(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-white">
+                  {creative.fileName?.trim() || "Video ad"}
+                </p>
+                {creative.durationSeconds != null && (
+                  <p className="text-xs text-surface-400">
+                    {Math.floor(creative.durationSeconds / 60)}:
+                    {String(creative.durationSeconds % 60).padStart(2, "0")}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <Badge
+            variant={
+              creative.assetStatus === "READY"
+                ? "success"
+                : creative.assetStatus === "ERRORED"
+                  ? "destructive"
+                  : "warning"
+            }
+          >
+            {creativeStatusLabel[creative.assetStatus]}
+          </Badge>
+          {canEdit && !editing && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setEditing(true)}
+              >
+                <Pencil className="mr-1 h-3.5 w-3.5" />
+                Edit
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                disabled={deleteMutation.isPending}
+                onClick={handleDelete}
+              >
+                {deleteMutation.isPending ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <>
+                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                    Remove
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+      {canEdit && (
+        <p className="mt-2 text-xs text-surface-500">
+          Edit updates the label only. Remove this ad to upload a different video
+          file, then use &ldquo;Upload Video Ad&rdquo;.
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -276,6 +433,53 @@ export default function CampaignDetailPage() {
             ) : (
               <p className="text-surface-500">No geographic targeting set.</p>
             )}
+
+            <div className="border-t border-surface-800 pt-3">
+              <span className="mb-2 flex items-center gap-1.5 text-surface-400">
+                <Tv className="h-3.5 w-3.5" />
+                Channels:
+              </span>
+              {campaign.channelTargets && campaign.channelTargets.length > 0 ? (
+                <ul className="space-y-2">
+                  {campaign.channelTargets.map((ct) => (
+                    <li key={ct.id}>
+                      {ct.channel?.slug ? (
+                        <Link
+                          to={`/channels/${ct.channel.slug}`}
+                          className="flex items-center gap-2 text-sm text-primary-400 hover:text-primary-300"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {ct.channel.logoUrl ? (
+                            <img
+                              src={ct.channel.logoUrl}
+                              alt=""
+                              className="h-8 w-8 rounded-md object-cover"
+                            />
+                          ) : (
+                            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-surface-800">
+                              <Tv className="h-4 w-4 text-surface-500" />
+                            </span>
+                          )}
+                          <span className="font-medium text-white">
+                            {ct.channel.name}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-surface-400">
+                          Channel {ct.channelId}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-surface-500">
+                  All ad-eligible channels — your ad can run on any channel that
+                  accepts preroll ads (no channel restriction).
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -297,36 +501,12 @@ export default function CampaignDetailPage() {
           ) : (
             <div className="space-y-3">
               {campaign.creatives.map((cr) => (
-                <div
+                <CreativeRow
                   key={cr.id}
-                  className="flex items-center justify-between rounded-lg border border-surface-700 bg-surface-800/50 px-4 py-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <Film className="h-5 w-5 text-surface-500" />
-                    <div>
-                      <p className="text-sm font-medium text-white">
-                        {cr.fileName || "Video Ad"}
-                      </p>
-                      {cr.durationSeconds && (
-                        <p className="text-xs text-surface-400">
-                          {Math.floor(cr.durationSeconds / 60)}:
-                          {String(cr.durationSeconds % 60).padStart(2, "0")}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <Badge
-                    variant={
-                      cr.assetStatus === "READY"
-                        ? "success"
-                        : cr.assetStatus === "ERRORED"
-                          ? "destructive"
-                          : "warning"
-                    }
-                  >
-                    {creativeStatusLabel[cr.assetStatus]}
-                  </Badge>
-                </div>
+                  campaignId={campaign.id}
+                  creative={cr}
+                  canEdit={canEdit}
+                />
               ))}
             </div>
           )}

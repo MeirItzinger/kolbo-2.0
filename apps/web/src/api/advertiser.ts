@@ -2,6 +2,7 @@ import axios from "axios";
 import type {
   Advertiser,
   AdCampaign,
+  AdCreative,
   AdvertiserPaymentMethod,
 } from "@/types";
 
@@ -180,6 +181,27 @@ export async function getAdUploadUrl(
   const { data } = await advApi.post(
     `/advertiser/campaigns/${campaignId}/upload`,
     { fileName }
+  );
+  return unwrap(data);
+}
+
+export async function deleteAdCreative(
+  campaignId: string,
+  creativeId: string
+): Promise<void> {
+  await advApi.delete(
+    `/advertiser/campaigns/${campaignId}/creatives/${creativeId}`
+  );
+}
+
+export async function updateAdCreative(
+  campaignId: string,
+  creativeId: string,
+  payload: { fileName: string | null }
+): Promise<AdCreative> {
+  const { data } = await advApi.patch(
+    `/advertiser/campaigns/${campaignId}/creatives/${creativeId}`,
+    payload
   );
   return unwrap(data);
 }

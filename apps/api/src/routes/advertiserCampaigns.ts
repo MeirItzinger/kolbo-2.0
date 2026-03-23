@@ -9,6 +9,8 @@ router.use(authenticateAdvertiser);
 router.get("/ad-eligible-channels", ctrl.adEligibleChannels);
 router.get("/", ctrl.list);
 router.post("/", ctrl.create);
+router.delete("/:id/creatives/:creativeId", ctrl.deleteCreative);
+router.patch("/:id/creatives/:creativeId", ctrl.patchCreative);
 router.get("/:id", ctrl.get);
 router.patch("/:id", ctrl.update);
 router.post("/:id/submit", ctrl.submit);
