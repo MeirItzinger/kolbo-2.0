@@ -118,6 +118,21 @@ export async function getAdvertiserMe(): Promise<Advertiser> {
   return unwrap(data);
 }
 
+// ── Ad-eligible channels ──
+
+export interface AdEligibleChannel {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+  _count: { videos: number };
+}
+
+export async function getAdEligibleChannels(): Promise<AdEligibleChannel[]> {
+  const { data } = await advApi.get("/advertiser/campaigns/ad-eligible-channels");
+  return unwrap(data);
+}
+
 // ── Campaigns ──
 
 export async function listCampaigns(): Promise<AdCampaign[]> {
@@ -139,6 +154,7 @@ export async function createCampaign(payload: {
   startDate?: string;
   endDate?: string;
   geoTargets?: { type: "CITY" | "ZIP_CODE"; value: string }[];
+  channelIds?: string[];
 }): Promise<AdCampaign> {
   const { data } = await advApi.post("/advertiser/campaigns", payload);
   return unwrap(data);

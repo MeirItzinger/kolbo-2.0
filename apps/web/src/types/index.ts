@@ -568,6 +568,7 @@ export interface AdCampaign {
   reviewedAt: string | null;
   reviewedBy: string | null;
   geoTargets?: AdGeoTarget[];
+  channelTargets?: AdCampaignChannel[];
   creatives?: AdCreative[];
   advertiser?: Pick<
     Advertiser,
@@ -583,6 +584,13 @@ export interface AdCampaign {
 export interface AdvertiserWithCampaigns extends Advertiser {
   campaigns: AdCampaign[];
   _count?: { campaigns: number };
+}
+
+export interface AdCampaignChannel {
+  id: string;
+  campaignId: string;
+  channelId: string;
+  channel?: Pick<Channel, "id" | "slug" | "name" | "logoUrl">;
 }
 
 export interface AdGeoTarget {

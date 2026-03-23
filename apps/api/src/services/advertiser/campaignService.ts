@@ -17,6 +17,67 @@ interface CreateCampaignInput {
   startDate?: string;
   endDate?: string;
   geoTargets?: GeoTargetInput[];
+  channelIds?: string[];
+}
+
+/**
+ * Returns channels that have at least one published video with ad-supported
+ * content (freeWithAds, hasPrerollAds, or hasMidrollAds), or whose
+ * allowedAccessTypes include FREE_WITH_ADS, or that have subscription plans
+ * with a WITH_ADS price variant.
+ */
+export async function getAdEligibleChannels() {
+  return prisma.channel.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        {
+          videos: {
+            some: {
+              status: "PUBLISHED",
+              OR: [
+                { freeWithAds: true },
+                { hasPrerollAds: true },
+                { hasMidrollAds: true },
+              ],
+            },
+          },
+        },
+        {
+          allowedAccessTypes: { has: "FREE_WITH_ADS" },
+        },
+        {
+          subscriptionPlans: {
+            some: {
+              isActive: true,
+              priceVariants: { some: { adTier: "WITH_ADS", isActive: true } },
+            },
+          },
+        },
+      ],
+    },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      logoUrl: true,
+      _count: {
+        select: {
+          videos: {
+            where: {
+              status: "PUBLISHED",
+              OR: [
+                { freeWithAds: true },
+                { hasPrerollAds: true },
+                { hasMidrollAds: true },
+              ],
+            },
+          },
+        },
+      },
+    },
+  });
 }
 
 export async function createCampaign(
@@ -43,8 +104,17 @@ export async function createCampaign(
             })),
           }
         : undefined,
+      channelTargets: input.channelIds?.length
+        ? {
+            create: input.channelIds.map((channelId) => ({ channelId })),
+          }
+        : undefined,
     },
-    include: { geoTargets: true, creatives: true },
+    include: {
+      geoTargets: true,
+      channelTargets: { include: { channel: { select: { id: true, slug: true, name: true, logoUrl: true } } } },
+      creatives: true,
+    },
   });
 
   return campaign;
@@ -76,6 +146,15 @@ export async function updateCampaign(
     });
   }
 
+  if (input.channelIds) {
+    await prisma.adCampaignChannel.deleteMany({ where: { campaignId } });
+    if (input.channelIds.length > 0) {
+      await prisma.adCampaignChannel.createMany({
+        data: input.channelIds.map((channelId) => ({ campaignId, channelId })),
+      });
+    }
+  }
+
   const updated = await prisma.adCampaign.update({
     where: { id: campaignId },
     data: {
@@ -101,11 +180,19 @@ export async function updateCampaign(
       status: "DRAFT",
       rejectionReason: null,
     },
-    include: { geoTargets: true, creatives: true },
+    include: {
+      geoTargets: true,
+      channelTargets: { include: { channel: { select: { id: true, slug: true, name: true, logoUrl: true } } } },
+      creatives: true,
+    },
   });
 
   return updated;
 }
+
+const channelTargetInclude = {
+  include: { channel: { select: { id: true, slug: true, name: true, logoUrl: true } } },
+} as const;
 
 export async function listCampaigns(advertiserId: string) {
   return prisma.adCampaign.findMany({
@@ -113,6 +200,7 @@ export async function listCampaigns(advertiserId: string) {
     orderBy: { createdAt: "desc" },
     include: {
       geoTargets: true,
+      channelTargets: channelTargetInclude,
       creatives: true,
       _count: { select: { dailyCharges: true } },
     },
@@ -124,6 +212,7 @@ export async function getCampaign(campaignId: string, advertiserId: string) {
     where: { id: campaignId },
     include: {
       geoTargets: true,
+      channelTargets: channelTargetInclude,
       creatives: true,
       dailyCharges: { orderBy: { date: "desc" }, take: 30 },
     },
@@ -163,7 +252,7 @@ export async function submitForReview(
   return prisma.adCampaign.update({
     where: { id: campaignId },
     data: { status: "PENDING_REVIEW", rejectionReason: null },
-    include: { geoTargets: true, creatives: true },
+    include: { geoTargets: true, channelTargets: channelTargetInclude, creatives: true },
   });
 }
 

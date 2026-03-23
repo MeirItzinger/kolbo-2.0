@@ -368,6 +368,7 @@ model Channel {
   userRoles           UserRole[]
   videoAccessRules    VideoAccessRule[]
   homepageElements    HomepageElement[]
+  adCampaignChannels  AdCampaignChannel[]
 
   @@index([slug])
 }
@@ -1178,14 +1179,29 @@ model AdCampaign {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  advertiser   Advertiser      @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
-  geoTargets   AdGeoTarget[]
-  creatives    AdCreative[]
-  dailyCharges AdDailyCharge[]
+  advertiser        Advertiser           @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
+  geoTargets        AdGeoTarget[]
+  channelTargets    AdCampaignChannel[]
+  creatives         AdCreative[]
+  dailyCharges      AdDailyCharge[]
   impressionCharges AdImpressionCharge[]
 
   @@index([advertiserId])
   @@index([status])
+}
+
+model AdCampaignChannel {
+  id         String     @id @default(cuid())
+  campaignId String
+  channelId  String
+  createdAt  DateTime   @default(now())
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  channel  Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, channelId])
+  @@index([campaignId])
+  @@index([channelId])
 }
 
 model AdGeoTarget {

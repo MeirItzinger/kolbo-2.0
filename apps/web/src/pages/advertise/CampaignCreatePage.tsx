@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
-import { createCampaign } from "@/api/advertiser";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Trash2, Tv } from "lucide-react";
+import { createCampaign, getAdEligibleChannels } from "@/api/advertiser";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -41,7 +41,14 @@ export default function CampaignCreatePage() {
   const [geoTargets, setGeoTargets] = useState<GeoTarget[]>([]);
   const [geoType, setGeoType] = useState<"CITY" | "ZIP_CODE">("CITY");
   const [geoValue, setGeoValue] = useState("");
+  const [selectedChannelIds, setSelectedChannelIds] = useState<string[]>([]);
   const [billingReady, setBillingReady] = useState(false);
+
+  const channelsQuery = useQuery({
+    queryKey: ["advertiser", "ad-eligible-channels"],
+    queryFn: getAdEligibleChannels,
+  });
+  const eligibleChannels = channelsQuery.data ?? [];
 
   const {
     register,
@@ -82,6 +89,7 @@ export default function CampaignCreatePage() {
       startDate: data.startDate || undefined,
       endDate: data.endDate || undefined,
       geoTargets: geoTargets.length > 0 ? geoTargets : undefined,
+      channelIds: selectedChannelIds.length > 0 ? selectedChannelIds : undefined,
     });
   };
 
@@ -259,6 +267,85 @@ export default function CampaignCreatePage() {
                 </div>
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Channel targeting */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Channel Targeting</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-surface-400">
+              Select which channels your ad will run on. Only channels with
+              ad-supported content are shown. Leave empty to target all
+              eligible channels.
+            </p>
+            {channelsQuery.isLoading ? (
+              <div className="flex justify-center py-4">
+                <Spinner size="sm" />
+              </div>
+            ) : eligibleChannels.length === 0 ? (
+              <p className="py-4 text-center text-sm text-surface-500">
+                No ad-eligible channels found.
+              </p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {eligibleChannels.map((ch) => {
+                  const selected = selectedChannelIds.includes(ch.id);
+                  return (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedChannelIds((prev) =>
+                          selected
+                            ? prev.filter((id) => id !== ch.id)
+                            : [...prev, ch.id]
+                        )
+                      }
+                      className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
+                        selected
+                          ? "border-primary-500 bg-primary-500/10"
+                          : "border-surface-700 bg-surface-800/50 hover:border-surface-600"
+                      }`}
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-700">
+                        <Tv className="h-4 w-4 text-surface-300" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-white">
+                          {ch.name}
+                        </p>
+                        <p className="text-xs text-surface-500">
+                          {ch._count.videos} ad-eligible video
+                          {ch._count.videos !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <div
+                        className={`h-4 w-4 shrink-0 rounded-sm border ${
+                          selected
+                            ? "border-primary-500 bg-primary-500"
+                            : "border-surface-600"
+                        }`}
+                      >
+                        {selected && (
+                          <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4 text-white">
+                            <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {selectedChannelIds.length > 0 && (
+              <p className="text-xs text-surface-400">
+                {selectedChannelIds.length} channel
+                {selectedChannelIds.length !== 1 ? "s" : ""} selected
+              </p>
+            )}
           </CardContent>
         </Card>
       </form>

@@ -2,6 +2,11 @@ import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import * as campaignService from "../services/advertiser/campaignService";
 
+export const adEligibleChannels = asyncHandler(async (_req: Request, res: Response) => {
+  const channels = await campaignService.getAdEligibleChannels();
+  res.json({ status: "success", data: channels });
+});
+
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const campaigns = await campaignService.listCampaigns(req.advertiser!.id);
   res.json({ status: "success", data: campaigns });
