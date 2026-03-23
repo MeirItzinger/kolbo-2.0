@@ -13,7 +13,12 @@ const app = express();
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || origin === env.CLIENT_URL || /^http:\/\/localhost:\d+$/.test(origin)) {
+      if (
+        !origin ||
+        origin === env.CLIENT_URL ||
+        /^http:\/\/localhost:\d+$/.test(origin) ||
+        /^https:\/\/[^\s]+\.vercel\.app$/.test(origin)
+      ) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
@@ -38,9 +43,12 @@ app.use(cookieParser());
 app.use(requestLogger);
 
 // ─── Health check ───────────────────────────────────────
-app.get("/health", (_req, res) => {
+const healthHandler = (_req: express.Request, res: express.Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
+};
+app.get("/health", healthHandler);
+/** Same JSON at `/api/health` so Vercel can route only `/api/*` to serverless. */
+app.get("/api/health", healthHandler);
 
 // ─── Static uploads ──────────────────────────────────────
 app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
@@ -56,23 +64,25 @@ app.use((_req, res) => {
 // ─── Error handler (must be last) ───────────────────────
 app.use(errorHandler);
 
-// ─── Start server ───────────────────────────────────────
-const server = app.listen(env.PORT, () => {
-  console.log(
-    `[kolbo-api] Server running on port ${env.PORT} (${env.NODE_ENV})`
-  );
-});
+// ─── Start server (local / traditional hosting only; Vercel uses serverless) ───
+if (!process.env.VERCEL) {
+  const server = app.listen(env.PORT, () => {
+    console.log(
+      `[kolbo-api] Server running on port ${env.PORT} (${env.NODE_ENV})`
+    );
+  });
 
-server.on("error", (err: NodeJS.ErrnoException) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(`[kolbo-api] Port ${env.PORT} already in use – retrying in 2s…`);
-    setTimeout(() => {
-      server.close();
-      server.listen(env.PORT);
-    }, 2000);
-  } else {
-    throw err;
-  }
-});
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`[kolbo-api] Port ${env.PORT} already in use – retrying in 2s…`);
+      setTimeout(() => {
+        server.close();
+        server.listen(env.PORT);
+      }, 2000);
+    } else {
+      throw err;
+    }
+  });
+}
 
 export default app;

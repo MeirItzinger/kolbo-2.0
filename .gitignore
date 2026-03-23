@@ -38,6 +38,7 @@ apps/api/prisma/*.db-journal
 
 # Vite
 *.local
+*.tsbuildinfo
 
 # Test / coverage
 coverage/

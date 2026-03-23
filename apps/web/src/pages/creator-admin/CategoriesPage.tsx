@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { adminGetCreator } from "@/api/admin";
 import { Spinner } from "@/components/ui/Spinner";
-import CategoriesInner from "@/pages/admin/CategoriesInner";
+import { CategoriesInner } from "@/pages/admin/CategoriesPage";
 
 export default function CreatorAdminCategoriesPage() {
   const { creatorId } = useParams<{ creatorId: string }>();
