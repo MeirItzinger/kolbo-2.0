@@ -253,13 +253,51 @@ export default function ChannelPage() {
   const playbackId =
     detailData?.videoAssets?.[0]?.muxPlaybackId ?? null;
 
+  /** Full-bleed hero image: banner wins; else channel image covers same area as page-builder HERO. */
+  const heroImageSrc = channel.bannerUrl
+    ? resolveUploadedAssetUrl(channel.bannerUrl)
+    : channel.logoUrl
+      ? resolveUploadedAssetUrl(channel.logoUrl)
+      : null;
+  const logoFillsHero = !channel.bannerUrl && !!channel.logoUrl;
+  const showOverlapThumbnail =
+    !!channel.bannerUrl && !!channel.logoUrl;
+
+  const channelHeaderBody = (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-bold text-white sm:text-3xl">
+          {channel.name}
+        </h1>
+        {channel.isActive && (
+          <CheckCircle className="h-5 w-5 shrink-0 text-primary-400" />
+        )}
+        {!hasChannelSub && (
+          <Button size="sm" className="shrink-0" asChild>
+            <Link to={`/pricing/${slug}`}>Subscribe to channel</Link>
+          </Button>
+        )}
+      </div>
+      {channel.description && (
+        <p className="mt-2 max-w-2xl text-surface-300 sm:text-surface-400">
+          {channel.description}
+        </p>
+      )}
+      {videos.length > 0 && (
+        <p className="mt-1 text-sm text-surface-400 sm:text-surface-500">
+          {videos.length} video{videos.length !== 1 ? "s" : ""}
+        </p>
+      )}
+    </>
+  );
+
   return (
     <div className="bg-surface-950">
-      {/* Banner */}
-      <div className="relative h-48 sm:h-64 lg:h-80">
-        {channel.bannerUrl ? (
+      {/* Banner / hero — same height as page-builder HERO */}
+      <div className="relative h-48 sm:h-64 lg:h-80 overflow-hidden">
+        {heroImageSrc ? (
           <img
-            src={resolveUploadedAssetUrl(channel.bannerUrl)}
+            src={heroImageSrc}
             alt={channel.name}
             className="h-full w-full object-cover"
           />
@@ -267,49 +305,32 @@ export default function ChannelPage() {
           <div className="h-full w-full bg-gradient-to-br from-primary-900/30 via-surface-900 to-surface-950" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/40 to-transparent" />
+        {logoFillsHero && (
+          <div className="absolute bottom-0 left-0 right-0 px-4 pb-8 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-7xl">{channelHeaderBody}</div>
+          </div>
+        )}
       </div>
 
-      {/* Channel header */}
-      <div className="relative mx-auto -mt-16 max-w-7xl px-4 sm:-mt-20 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:gap-6">
-          {channel.logoUrl ? (
-            <img
-              src={resolveUploadedAssetUrl(channel.logoUrl)}
-              alt={channel.name}
-              className="h-24 w-24 rounded-2xl border-4 border-surface-950 object-cover shadow-xl sm:h-32 sm:w-32"
-            />
-          ) : (
-            <div className="flex h-24 w-24 items-center justify-center rounded-2xl border-4 border-surface-950 bg-surface-800 shadow-xl sm:h-32 sm:w-32">
-              <Tv className="h-10 w-10 text-surface-500" />
-            </div>
-          )}
-          <div className="flex-1 pb-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-bold text-white sm:text-3xl">
-                {channel.name}
-              </h1>
-              {channel.isActive && (
-                <CheckCircle className="h-5 w-5 shrink-0 text-primary-400" />
-              )}
-              {!hasChannelSub && (
-                <Button size="sm" className="shrink-0" asChild>
-                  <Link to={`/pricing/${slug}`}>Subscribe to channel</Link>
-                </Button>
-              )}
-            </div>
-            {channel.description && (
-              <p className="mt-2 max-w-2xl text-surface-400">
-                {channel.description}
-              </p>
+      {/* Overlap row: small logo only when banner + separate logo; otherwise full hero already shows the image */}
+      {!logoFillsHero && (
+        <div className="relative mx-auto -mt-16 max-w-7xl px-4 sm:-mt-20 sm:px-6 lg:px-8">
+          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:gap-6">
+            {showOverlapThumbnail ? (
+              <img
+                src={resolveUploadedAssetUrl(channel.logoUrl!)}
+                alt={channel.name}
+                className="h-24 w-24 rounded-2xl border-4 border-surface-950 object-cover shadow-xl sm:h-32 sm:w-32"
+              />
+            ) : (
+              <div className="flex h-24 w-24 items-center justify-center rounded-2xl border-4 border-surface-950 bg-surface-800 shadow-xl sm:h-32 sm:w-32">
+                <Tv className="h-10 w-10 text-surface-500" />
+              </div>
             )}
-            {videos.length > 0 && (
-              <p className="mt-1 text-sm text-surface-500">
-                {videos.length} video{videos.length !== 1 ? "s" : ""}
-              </p>
-            )}
+            <div className="flex-1 pb-2">{channelHeaderBody}</div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Unified channel content: page builder elements + category rows in sort order */}
       {videosQuery.isLoading ? (
