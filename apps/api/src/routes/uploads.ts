@@ -46,12 +46,15 @@ router.post(
     }
 
     const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+    const blobAccessEnv = process.env.BLOB_ACCESS?.trim().toLowerCase();
+    const blobAccess: "public" | "private" =
+      blobAccessEnv === "private" ? "private" : "public";
 
     if (token) {
       const pathname = `kolbo/images/${uuid()}${ext}`;
       try {
         const blob = await put(pathname, req.file.buffer, {
-          access: "public",
+          access: blobAccess,
           token,
           contentType: req.file.mimetype || `image/${ext.replace(".", "")}`,
         });
@@ -60,8 +63,18 @@ router.post(
         const message =
           err instanceof Error ? err.message : "Blob upload failed";
         console.error("[uploads] Vercel Blob put failed:", err);
+        if (
+          message.includes("private store") &&
+          message.includes("public access")
+        ) {
+          throw ApiError.badRequest(
+            "This Vercel Blob store is Private but the app defaults to public uploads. " +
+              "Recommended for channel/hero images: create a Public Blob store (Vercel → Storage → Blob) and connect it to this project so images work in the browser. " +
+              "Alternatively set env BLOB_ACCESS=private to match a private store (images will not load in <img> on public pages unless you add a proxy)."
+          );
+        }
         throw ApiError.internal(
-          `Image storage failed: ${message}. Check BLOB_READ_WRITE_TOKEN and Blob store in Vercel.`
+          `Image storage failed: ${message}. Check BLOB_READ_WRITE_TOKEN, BLOB_ACCESS (public|private), and your Blob store in Vercel.`
         );
       }
       return;
