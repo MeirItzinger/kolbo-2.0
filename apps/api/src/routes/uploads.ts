@@ -24,7 +24,7 @@ const upload = multer({
     if (allowed.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error(`File type ${ext} is not allowed`));
+      cb(ApiError.badRequest(`File type ${ext} is not allowed`));
     }
   },
 });
@@ -45,7 +45,7 @@ router.post(
       throw ApiError.badRequest(`File type ${ext} is not allowed`);
     }
 
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
 
     if (token) {
       const pathname = `kolbo/images/${uuid()}${ext}`;

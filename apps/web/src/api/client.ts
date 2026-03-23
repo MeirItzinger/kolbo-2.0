@@ -19,22 +19,54 @@ api.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<string> | null = null;
 
-const API_ORIGIN = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL.replace(/\/api$/, "")
-  : "";
+/**
+ * Origin where `/uploads/*` is served (API base URL without `/api`).
+ * In production without VITE_API_URL, same tab origin (monorepo on Vercel).
+ */
+function uploadsAssetBase(): string {
+  const vite = import.meta.env.VITE_API_URL;
+  if (vite) return vite.replace(/\/api$/, "");
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
+/**
+ * DB rows from local dev often store `http://localhost:4000/uploads/...`.
+ * Browsers block those from HTTPS pages (mixed content + loopback). Rewrite to the
+ * current deployment’s uploads base (images may still 404 until re-uploaded to Blob).
+ */
+function rewriteLocalDevUploadsUrl(urlString: string): string | null {
+  try {
+    const u = new URL(urlString);
+    if (!u.pathname.startsWith("/uploads/")) return null;
+    if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1") return null;
+    const base = uploadsAssetBase();
+    if (!base) return null;
+    return `${base}${u.pathname}`;
+  } catch {
+    return null;
+  }
+}
 
 /** Absolute URL for display (img src): Blob/CDN or API origin + /uploads path. */
 export function resolveUploadedAssetUrl(pathOrUrl: string): string {
   if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
-    return pathOrUrl;
+    return rewriteLocalDevUploadsUrl(pathOrUrl) ?? pathOrUrl;
   }
   const base = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
-  return API_ORIGIN ? `${API_ORIGIN}${base}` : base;
+  const origin = uploadsAssetBase();
+  return origin ? `${origin}${base}` : base;
 }
 
 function resolveUploads(value: unknown): unknown {
   if (typeof value === "string") {
-    return value.startsWith("/uploads/") ? `${API_ORIGIN}${value}` : value;
+    const fromLocal = rewriteLocalDevUploadsUrl(value);
+    if (fromLocal) return fromLocal;
+    if (value.startsWith("/uploads/")) {
+      const origin = uploadsAssetBase();
+      return origin ? `${origin}${value}` : value;
+    }
+    return value;
   }
   if (Array.isArray(value)) return value.map(resolveUploads);
   if (value && typeof value === "object") {
