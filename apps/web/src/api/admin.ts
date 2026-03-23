@@ -12,7 +12,7 @@ import type {
   PaginatedResponse,
   SalesTransaction,
 } from "@/types";
-import { api } from "./client";
+import { api, getAccessToken } from "./client";
 
 function unwrap<T>(data: any): T {
   return data?.data ?? data;
@@ -405,11 +405,35 @@ export async function createDirectUpload(payload: {
   return unwrap(data);
 }
 
+/**
+ * Must not use the shared axios instance for multipart: its default
+ * `Content-Type: application/json` makes axios stringify FormData as JSON, and
+ * setting `multipart/form-data` manually omits the boundary. `fetch` lets the
+ * browser send a proper multipart body.
+ */
 export async function uploadImage(file: File): Promise<{ url: string }> {
   const formData = new FormData();
   formData.append("file", file);
-  const { data } = await api.post("/uploads/image", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
+  const base = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+  const url = `${base}/uploads/image`;
+  const token = getAccessToken();
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
   });
-  return unwrap(data);
+  let payload: unknown = {};
+  try {
+    payload = await res.json();
+  } catch {
+    /* non-JSON error body */
+  }
+  if (!res.ok) {
+    const msg =
+      (payload as { message?: string })?.message ||
+      `Upload failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return unwrap<{ url: string }>(payload);
 }
