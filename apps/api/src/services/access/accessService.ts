@@ -44,16 +44,57 @@ function resolveAdMode(
   return "full_ads";
 }
 
-/** Ad tier and concurrency live on PlanPriceVariant, not SubscriptionPlan. */
-function subscriptionVariantFields(sub: {
+/**
+ * Ad tier and concurrency live on PlanPriceVariant, not SubscriptionPlan.
+ * When `priceVariant` is null (e.g. webhook race left priceVariantId empty),
+ * fall back to matching the subscription's stripePriceId against variants,
+ * and auto-repair the missing FK so subsequent lookups are instant.
+ */
+async function subscriptionVariantFields(sub: {
+  id: string;
   priceVariant: { adTier: AdTier; concurrencyTier: ConcurrencyTier } | null;
-}): { adTier: AdTier; concurrencyTier: ConcurrencyTier } {
+  stripePriceId: string | null;
+  subscriptionPlanId: string;
+}): Promise<{ adTier: AdTier; concurrencyTier: ConcurrencyTier }> {
   if (sub.priceVariant) {
     return {
       adTier: sub.priceVariant.adTier,
       concurrencyTier: sub.priceVariant.concurrencyTier,
     };
   }
+
+  // Attempt recovery: match by Stripe price ID, then by single active variant
+  let variant: { id: string; adTier: AdTier; concurrencyTier: ConcurrencyTier } | null = null;
+
+  if (sub.stripePriceId) {
+    variant = await prisma.planPriceVariant.findFirst({
+      where: {
+        planId: sub.subscriptionPlanId,
+        stripePriceId: sub.stripePriceId,
+        isActive: true,
+      },
+      select: { id: true, adTier: true, concurrencyTier: true },
+    });
+  }
+
+  if (!variant) {
+    const activeVariants = await prisma.planPriceVariant.findMany({
+      where: { planId: sub.subscriptionPlanId, isActive: true },
+      select: { id: true, adTier: true, concurrencyTier: true },
+    });
+    if (activeVariants.length === 1) {
+      variant = activeVariants[0];
+    }
+  }
+
+  if (variant) {
+    // Auto-repair so this lookup doesn't repeat
+    prisma.userSubscription
+      .update({ where: { id: sub.id }, data: { priceVariantId: variant.id } })
+      .catch(() => {});
+    return { adTier: variant.adTier, concurrencyTier: variant.concurrencyTier };
+  }
+
   return { adTier: "WITHOUT_ADS", concurrencyTier: "STREAMS_3" };
 }
 
@@ -153,7 +194,7 @@ export async function checkAccess(
     if (activeSub) {
       const plan = activeSub.subscriptionPlan;
       const { adTier, concurrencyTier } =
-        subscriptionVariantFields(activeSub);
+        await subscriptionVariantFields(activeSub);
       return {
         allowed: true,
         reason: `Subscription: ${plan.name}`,
@@ -214,7 +255,7 @@ export async function checkAccess(
     if (channelSub) {
       const plan = channelSub.subscriptionPlan;
       const { adTier, concurrencyTier } =
-        subscriptionVariantFields(channelSub);
+        await subscriptionVariantFields(channelSub);
       return {
         allowed: true,
         reason: `Channel subscription: ${plan.name}`,
