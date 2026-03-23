@@ -383,7 +383,6 @@ export default function ChannelPage() {
               videoId={detailData.id}
               playbackId={playbackId}
               title={detailData.title ?? ""}
-              freeWithAds={!!detailData.freeWithAds}
             />
           ) : hasAccess && !playbackId ? (
             <VideoProcessing title={detailData?.title ?? "this video"} />
@@ -700,7 +699,7 @@ function AuthPrompt({ videoTitle }: { videoTitle: string }) {
   );
 }
 
-// ── Channel modal playback (free-with-ads uses token + optional preroll) ──
+// ── Channel modal playback (token + optional preroll for any ad-eligible access) ──
 
 const PLAYBACK_API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -730,12 +729,10 @@ function ChannelModalPlayer({
   videoId,
   playbackId: fallbackPlaybackId,
   title,
-  freeWithAds,
 }: {
   videoId: string;
   playbackId: string;
   title: string;
-  freeWithAds: boolean;
 }) {
   const [showingAd, setShowingAd] = useState(true);
   const sessionEndedRef = useRef(false);
@@ -749,7 +746,6 @@ function ChannelModalPlayer({
   const tokenQuery = useQuery({
     queryKey: ["playback-token", "modal", videoId],
     queryFn: () => fetchPlaybackTokenForModal(videoId),
-    enabled: freeWithAds,
   });
 
   const adNonce = useRef(0);
@@ -759,18 +755,17 @@ function ChannelModalPlayer({
     queryKey: ["preroll-ad", "modal", videoId, adNonce.current],
     queryFn: () => fetchPrerollAdForModal(videoId),
     enabled:
-      freeWithAds &&
-      !!tokenQuery.isSuccess &&
+      tokenQuery.isSuccess &&
       tokenQuery.data?.adMode !== "none",
     staleTime: 0,
     gcTime: 0,
   });
 
   useEffect(() => {
-    if (!freeWithAds) return;
     const hasAd = !!adQuery.data?.playbackId;
     if (adQuery.isFetched && !hasAd && tokenQuery.isSuccess) setShowingAd(false);
-  }, [freeWithAds, adQuery.data, adQuery.isFetched, tokenQuery.isSuccess]);
+    if (tokenQuery.isSuccess && tokenQuery.data?.adMode === "none") setShowingAd(false);
+  }, [adQuery.data, adQuery.isFetched, tokenQuery.isSuccess, tokenQuery.data?.adMode]);
 
   const handleAdComplete = useCallback(() => setShowingAd(false), []);
 
@@ -802,23 +797,6 @@ function ChannelModalPlayer({
       }
     };
   }, []);
-
-  if (!freeWithAds) {
-    return (
-      <div>
-        <MuxPlayer
-          playbackId={fallbackPlaybackId}
-          metadata={{ video_title: title }}
-          streamType="on-demand"
-          autoPlay
-          style={{ width: "100%", aspectRatio: "16/9" }}
-        />
-        <div className="p-4">
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
-        </div>
-      </div>
-    );
-  }
 
   if (tokenQuery.isLoading) {
     return (
