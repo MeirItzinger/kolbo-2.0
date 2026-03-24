@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { createCheckoutRental, createCheckoutPurchase } from "@/api/stripe";
 import {
@@ -67,14 +67,20 @@ export default function ChannelPage() {
 
   const channel = channelQuery.data;
 
-  const videosQuery = useQuery({
+  const videosQuery = useInfiniteQuery({
     queryKey: ["channel", channel?.id, "videos"],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       listVideos({
         channelId: channel!.id,
         status: "PUBLISHED",
         perPage: 50,
+        page: pageParam,
       }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const { page, limit, total } = lastPage.meta;
+      return page * limit < total ? page + 1 : undefined;
+    },
     enabled: !!channel?.id,
   });
 
@@ -149,12 +155,8 @@ export default function ChannelPage() {
     return [];
   })();
 
-  const rawVideos = videosQuery.data;
-  const videos: Video[] = Array.isArray(rawVideos)
-    ? rawVideos
-    : rawVideos?.data ?? [];
+  const videos: Video[] = videosQuery.data?.pages.flatMap((p) => p.data) ?? [];
 
-  /** True if at least one video is linked to an active channel category (many-to-many). */
   type UnifiedPageItem =
     | { kind: "element"; sortOrder: number; data: HomepageElement }
     | { kind: "category"; sortOrder: number; data: Category };
@@ -165,17 +167,11 @@ export default function ChannelPage() {
       sortOrder: el.sortOrder ?? 0,
       data: el,
     })),
-    ...channelCategories
-      .filter((cat) =>
-        videos.some((v) =>
-          (v.categories ?? []).some((c) => c.id === cat.id),
-        ),
-      )
-      .map((cat): UnifiedPageItem => ({
-        kind: "category",
-        sortOrder: cat.sortOrder ?? 0,
-        data: cat,
-      })),
+    ...channelCategories.map((cat): UnifiedPageItem => ({
+      kind: "category",
+      sortOrder: cat.sortOrder ?? 0,
+      data: cat,
+    })),
   ].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const uncategorizedVideos = videos.filter((v) => {
@@ -362,9 +358,6 @@ export default function ChannelPage() {
               >
                 <CategoryRow
                   category={item.data}
-                  videos={videos.filter((v) =>
-                    (v.categories ?? []).some((c) => c.id === item.data.id),
-                  )}
                   onVideoClick={handleVideoClick}
                 />
               </section>
@@ -372,11 +365,12 @@ export default function ChannelPage() {
           )}
           {uncategorizedVideos.length > 0 && (
             <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-              <CategoryRow
-                category={{ id: "_uncategorized", name: "More Videos", slug: "more", channelId: "", sortOrder: 999, isActive: true, createdAt: "", updatedAt: "" }}
-                videos={uncategorizedVideos}
-                onVideoClick={handleVideoClick}
-              />
+              <h2 className="mb-4 text-lg font-semibold text-white">More Videos</h2>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {uncategorizedVideos.map((v) => (
+                  <VideoCard key={v.id} video={v} onClick={() => handleVideoClick(v)} />
+                ))}
+              </div>
             </section>
           )}
         </div>
@@ -394,6 +388,19 @@ export default function ChannelPage() {
           </div>
         </section>
       ) : null}
+
+      {/* Load more */}
+      {videosQuery.hasNextPage && (
+        <div className="flex justify-center pb-12">
+          <Button
+            variant="outline"
+            onClick={() => videosQuery.fetchNextPage()}
+            disabled={videosQuery.isFetchingNextPage}
+          >
+            {videosQuery.isFetchingNextPage ? "Loading…" : "Load more videos"}
+          </Button>
+        </div>
+      )}
 
       {/* Video modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
@@ -441,16 +448,26 @@ export default function ChannelPage() {
 
 function CategoryRow({
   category,
-  videos,
   onVideoClick,
 }: {
   category: Category;
-  videos: Video[];
   onVideoClick: (video: Video) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const videosQuery = useQuery({
+    queryKey: ["category-videos", category.id],
+    queryFn: () =>
+      listVideos({
+        categoryId: category.id,
+        status: "PUBLISHED",
+        perPage: 30,
+      }),
+  });
+
+  const videos: Video[] = videosQuery.data?.data ?? [];
 
   const checkScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -472,6 +489,8 @@ function CategoryRow({
     const amount = el.clientWidth * 0.75;
     el.scrollBy({ left: direction === "left" ? -amount : amount, behavior: "smooth" });
   };
+
+  if (videosQuery.isSuccess && videos.length === 0) return null;
 
   return (
     <div>
@@ -496,16 +515,22 @@ function CategoryRow({
           )}
         </div>
       </div>
-      <div
-        ref={scrollRef}
-        className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
-      >
-        {videos.map((v) => (
-          <div key={v.id} className="w-48 flex-shrink-0 sm:w-52">
-            <VideoCard video={v} onClick={() => onVideoClick(v)} />
-          </div>
-        ))}
-      </div>
+      {videosQuery.isLoading ? (
+        <div className="flex justify-center py-4">
+          <Spinner size="sm" />
+        </div>
+      ) : (
+        <div
+          ref={scrollRef}
+          className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
+        >
+          {videos.map((v) => (
+            <div key={v.id} className="w-48 flex-shrink-0 sm:w-52">
+              <VideoCard video={v} onClick={() => onVideoClick(v)} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

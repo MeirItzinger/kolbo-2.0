@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
 import { Play, Search, Tv, X, Lock, Compass, LayoutGrid } from "lucide-react";
 import { listChannels } from "@/api/channels";
 import { listVideos } from "@/api/videos";
@@ -21,19 +21,38 @@ export default function ExplorePage() {
     queryFn: () => listChannels({ perPage: 50 }),
   });
 
-  const videosQuery = useQuery({
+  const videosQuery = useInfiniteQuery({
     queryKey: ["explore", "videos", channelFilter, searchTerm],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       listVideos({
         perPage: 48,
+        page: pageParam,
         ...(channelFilter ? { channelId: channelFilter } : {}),
         ...(searchTerm.length >= 2 ? { search: searchTerm } : {}),
       }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const { page, limit, total } = lastPage.meta;
+      return page * limit < total ? page + 1 : undefined;
+    },
     enabled: searchTerm.length === 0 || searchTerm.length >= 2,
   });
 
   const channels = channelsQuery.data?.data ?? [];
-  const videos = videosQuery.data?.data ?? [];
+  /** Dedupe by id: offset pagination + changing sort keys can surface the same row on multiple pages. */
+  const videos = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Video[] = [];
+    for (const page of videosQuery.data?.pages ?? []) {
+      for (const v of page.data) {
+        if (!seen.has(v.id)) {
+          seen.add(v.id);
+          out.push(v);
+        }
+      }
+    }
+    return out;
+  }, [videosQuery.data?.pages]);
   const activeChannel = channels.find((c) => c.id === channelFilter);
 
   const setChannel = (id: string) => {
@@ -173,11 +192,24 @@ export default function ExplorePage() {
               <Spinner size="lg" />
             </div>
           ) : videos.length > 0 ? (
-            <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-              {videos.map((video) => (
-                <VideoCard key={video.id} video={video} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+                {videos.map((video) => (
+                  <VideoCard key={video.id} video={video} />
+                ))}
+              </div>
+              {videosQuery.hasNextPage && (
+                <div className="flex justify-center pt-10">
+                  <Button
+                    variant="outline"
+                    onClick={() => videosQuery.fetchNextPage()}
+                    disabled={videosQuery.isFetchingNextPage}
+                  >
+                    {videosQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+                  </Button>
+                </div>
+              )}
+            </>
           ) : (
             <div className="py-20 text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-800">

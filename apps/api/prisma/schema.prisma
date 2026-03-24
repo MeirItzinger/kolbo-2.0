@@ -99,6 +99,7 @@ enum HomepageElementType {
   CHANNEL_ROW
   TEXT_DIVIDER
   LINE_DIVIDER
+  CATEGORY_ROW
 }
 
 enum BillingInterval {
@@ -487,14 +488,14 @@ model Category {
   channelId String
   name      String
   slug      String
-  icon      String?
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  channel      Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  videoLinks   VideoCategory[]
+  channel          Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  videoLinks       VideoCategory[]
+  homepageElements HomepageElement[]
 
   @@unique([channelId, slug])
   @@index([channelId])
@@ -705,11 +706,12 @@ model LandingHero {
 }
 
 model HomepageElement {
-  id        String              @id @default(cuid())
-  type      HomepageElementType
-  channelId String?
-  sortOrder Int                 @default(0)
-  isActive  Boolean             @default(true)
+  id         String              @id @default(cuid())
+  type       HomepageElementType
+  channelId  String?
+  categoryId String?
+  sortOrder  Int                 @default(0)
+  isActive   Boolean             @default(true)
 
   title     String?
   subtitle  String?
@@ -719,11 +721,13 @@ model HomepageElement {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  channel Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  items   HomepageElementItem[]
+  channel  Channel?  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  items    HomepageElementItem[]
 
   @@index([sortOrder])
   @@index([channelId])
+  @@index([categoryId])
 }
 
 model HomepageElementItem {

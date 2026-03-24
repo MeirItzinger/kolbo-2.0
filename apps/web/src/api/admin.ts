@@ -104,6 +104,7 @@ export async function adminListVideos(params?: {
   channelId?: string;
   creatorProfileId?: string;
   status?: string;
+  search?: string;
   page?: number;
   perPage?: number;
 }): Promise<PaginatedResponse<Video>> {
@@ -341,6 +342,13 @@ export async function adminReorderChannelPageUnified(
 }
 
 // ── Categories ────────────────────────────────────────────────────
+
+export async function adminListAllCategories(): Promise<
+  (Category & { channel?: { id: string; name: string; slug: string } })[]
+> {
+  const { data } = await api.get("/categories");
+  return unwrap(data);
+}
 
 export async function adminListCategories(channelId: string): Promise<Category[]> {
   const { data } = await api.get(`/channels/${channelId}/categories`);

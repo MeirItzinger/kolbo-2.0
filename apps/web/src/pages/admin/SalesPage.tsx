@@ -51,7 +51,7 @@ export default function SalesPage() {
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("SUPER_ADMIN");
   const channelAdminChannelId = !isSuperAdmin
-    ? user?.roles?.find((r: any) => r.role?.key === "CHANNEL_ADMIN")?.channelId
+    ? user?.roles?.find((r: any) => r.role?.key === "CHANNEL_ADMIN" && r.channelId)?.channelId
     : undefined;
 
   const [page, setPage] = useState(1);

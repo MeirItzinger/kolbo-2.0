@@ -100,7 +100,8 @@ async function subscriptionVariantFields(sub: {
 
 export async function checkAccess(
   userId: string | null,
-  videoId: string
+  videoId: string,
+  userRoles?: Array<{ key: string; channelId?: string }>
 ): Promise<AccessCheckResult> {
   const video = await prisma.video.findUnique({
     where: { id: videoId },
@@ -172,6 +173,25 @@ export async function checkAccess(
       maxConcurrentStreams: 0,
       ...baseResult,
     };
+  }
+
+  // Admin bypass: SUPER_ADMIN can play anything; CHANNEL_ADMIN can play
+  // videos belonging to their channel.
+  if (userRoles) {
+    const isSuperAdmin = userRoles.some((r) => r.key === "SUPER_ADMIN");
+    const isChannelAdmin = userRoles.some(
+      (r) => r.key === "CHANNEL_ADMIN" && r.channelId === video.channelId
+    );
+    if (isSuperAdmin || isChannelAdmin) {
+      return {
+        allowed: true,
+        reason: isSuperAdmin ? "Super admin" : "Channel admin",
+        accessType: "FREE",
+        adMode: "none",
+        maxConcurrentStreams: 5,
+        ...baseResult,
+      };
+    }
   }
 
   const accessRules = video.videoAccessRules;

@@ -58,7 +58,7 @@ export default function AdminPlansPage() {
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("SUPER_ADMIN");
   const channelAdminChannelId = !isSuperAdmin
-    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN")?.channelId ?? ""
+    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN" && r.channelId)?.channelId ?? ""
     : "";
 
   const qc = useQueryClient();

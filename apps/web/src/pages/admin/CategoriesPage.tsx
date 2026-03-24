@@ -54,7 +54,7 @@ const categorySchema = z.object({
   name: z.string().min(1, "Name is required"),
   slug: z.string().min(1, "Slug is required"),
   icon: z.string().optional(),
-  isActive: z.boolean().default(true),
+  isActive: z.coerce.boolean().default(true),
 });
 
 type CategoryFormData = z.infer<typeof categorySchema>;
@@ -63,7 +63,7 @@ export default function AdminCategoriesPage() {
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("SUPER_ADMIN");
   const channelAdminChannelId = !isSuperAdmin
-    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN")?.channelId ?? ""
+    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN" && r.channelId)?.channelId ?? ""
     : "";
 
   const [selectedChannelId, setSelectedChannelId] = useState(channelAdminChannelId);
@@ -364,7 +364,11 @@ function CategoryFormDialog({
 
   const createMutation = useMutation({
     mutationFn: (data: CategoryFormData) =>
-      adminCreateCategory(channelId, data),
+      adminCreateCategory(channelId, {
+        name: data.name,
+        slug: data.slug,
+        isActive: data.isActive,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "categories", channelId] });
       onClose();
@@ -373,7 +377,11 @@ function CategoryFormDialog({
 
   const updateMutation = useMutation({
     mutationFn: (data: CategoryFormData) =>
-      adminUpdateCategory(channelId, category!.id, data),
+      adminUpdateCategory(channelId, category!.id, {
+        name: data.name,
+        slug: data.slug,
+        isActive: data.isActive,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "categories", channelId] });
       onClose();
@@ -425,7 +433,7 @@ function CategoryFormDialog({
                 className="w-24 text-xl"
               />
               <p className="mt-1 text-xs text-surface-500">
-                Paste a single emoji to display on the catalogue page.
+                Optional — not stored until the database field is enabled.
               </p>
             </div>
             <div>
@@ -443,7 +451,7 @@ function CategoryFormDialog({
               <input
                 type="checkbox"
                 id="catActive"
-                {...register("isActive")}
+                {...register("isActive", { valueAsBoolean: true })}
                 className="h-4 w-4 rounded border-surface-700 bg-surface-900 text-primary-600 focus:ring-primary-500"
               />
               <label htmlFor="catActive" className="text-sm text-surface-300">

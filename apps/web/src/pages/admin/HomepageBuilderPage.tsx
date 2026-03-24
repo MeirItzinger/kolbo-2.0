@@ -36,6 +36,7 @@ import {
   X,
   AlertTriangle,
   Upload,
+  FolderOpen,
 } from "lucide-react";
 import {
   adminListHomepageElements,
@@ -45,6 +46,7 @@ import {
   adminReorderHomepageElements,
   adminListVideos,
   adminListChannels,
+  adminListAllCategories,
   uploadImage,
 } from "@/api/admin";
 import { resolveUploadedAssetUrl } from "@/api/client";
@@ -67,6 +69,7 @@ const ELEMENT_LABELS: Record<HomepageElementType, string> = {
   CHANNEL_ROW: "Channels Row",
   TEXT_DIVIDER: "Text Divider",
   LINE_DIVIDER: "Line Divider",
+  CATEGORY_ROW: "Category Row",
 };
 
 const ELEMENT_ICONS: Record<HomepageElementType, typeof Rows3> = {
@@ -75,6 +78,7 @@ const ELEMENT_ICONS: Record<HomepageElementType, typeof Rows3> = {
   CHANNEL_ROW: Tv,
   TEXT_DIVIDER: Type,
   LINE_DIVIDER: Minus,
+  CATEGORY_ROW: FolderOpen,
 };
 
 export default function HomepageBuilderPage() {
@@ -140,6 +144,8 @@ export default function HomepageBuilderPage() {
       adminCreateHomepageElement({ type } as any).then(() => {
         qc.invalidateQueries({ queryKey: ["admin", "homepage-elements"] });
       });
+    } else if (type === "CATEGORY_ROW") {
+      setCreatingType(type);
     } else {
       setCreatingType(type);
     }
@@ -170,6 +176,7 @@ export default function HomepageBuilderPage() {
                 {(
                   [
                     "CONTENT_ROW",
+                    "CATEGORY_ROW",
                     "HERO",
                     "CHANNEL_ROW",
                     "TEXT_DIVIDER",
@@ -230,6 +237,8 @@ export default function HomepageBuilderPage() {
                   onEdit={() => {
                     if (el.type === "CONTENT_ROW") {
                       setManagingVideos(el);
+                    } else if (el.type === "CATEGORY_ROW") {
+                      setEditingElement(el);
                     } else {
                       setEditingElement(el);
                     }
@@ -243,7 +252,7 @@ export default function HomepageBuilderPage() {
       )}
 
       {/* Create / Edit dialogs */}
-      {creatingType && creatingType !== "CONTENT_ROW" && (
+      {creatingType && creatingType !== "CONTENT_ROW" && creatingType !== "CATEGORY_ROW" && (
         <ElementFormDialog
           key={`create-${creatingType}`}
           type={creatingType}
@@ -259,10 +268,24 @@ export default function HomepageBuilderPage() {
         />
       )}
 
-      {editingElement && editingElement.type !== "CONTENT_ROW" && (
+      {creatingType === "CATEGORY_ROW" && (
+        <CategoryRowFormDialog
+          element={null}
+          onClose={() => setCreatingType(null)}
+        />
+      )}
+
+      {editingElement && editingElement.type !== "CONTENT_ROW" && editingElement.type !== "CATEGORY_ROW" && (
         <ElementFormDialog
           key={editingElement.id}
           type={editingElement.type}
+          element={editingElement}
+          onClose={() => setEditingElement(null)}
+        />
+      )}
+
+      {editingElement && editingElement.type === "CATEGORY_ROW" && (
+        <CategoryRowFormDialog
           element={editingElement}
           onClose={() => setEditingElement(null)}
         />
@@ -363,6 +386,8 @@ function SortableElementPreview({
         return <TextDividerPreview element={element} />;
       case "LINE_DIVIDER":
         return <LineDividerPreview />;
+      case "CATEGORY_ROW":
+        return <CategoryRowPreview element={element} />;
       default:
         return null;
     }
@@ -586,6 +611,28 @@ function LineDividerPreview() {
   return (
     <div className="px-6 py-4">
       <hr className="border-surface-700" />
+    </div>
+  );
+}
+
+function CategoryRowPreview({ element }: { element: HomepageElement }) {
+  const cat = element.category;
+  return (
+    <div className="px-6 py-4">
+      <div className="flex items-center gap-2">
+        <FolderOpen className="h-4 w-4 text-primary-400" />
+        <h3 className="text-sm font-semibold text-white">
+          {element.title || cat?.name || "Category Row"}
+        </h3>
+        {cat?.channel && (
+          <Badge variant="secondary" className="text-[10px]">
+            {cat.channel.name}
+          </Badge>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-surface-500">
+        Videos from category "{cat?.name ?? "unknown"}" will load dynamically
+      </p>
     </div>
   );
 }
@@ -1054,6 +1101,176 @@ function ContentRowFormDialog({
               className="h-4 w-4 rounded border-surface-700 bg-surface-900 text-primary-600 focus:ring-primary-500"
             />
             <label htmlFor="rowActive" className="text-sm text-surface-300">
+              Active
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button disabled={isPending} onClick={handleSave}>
+              {isPending ? (
+                <Spinner size="sm" />
+              ) : isEdit ? (
+                "Save"
+              ) : (
+                "Create"
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── Category Row Form (create + edit with category picker) ───────
+
+interface CategoryWithChannel {
+  id: string;
+  name: string;
+  slug: string;
+  channelId: string;
+  channel?: { id: string; name: string; slug: string };
+}
+
+function CategoryRowFormDialog({
+  element,
+  onClose,
+}: {
+  element: HomepageElement | null;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const isEdit = !!element;
+
+  const [title, setTitle] = useState(element?.title ?? "");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(
+    element?.categoryId ?? "",
+  );
+  const [isActive, setIsActive] = useState(element?.isActive ?? true);
+  const [error, setError] = useState("");
+
+  const categoriesQuery = useQuery({
+    queryKey: ["admin", "all-categories"],
+    queryFn: adminListAllCategories,
+  });
+
+  const allCategories: CategoryWithChannel[] = (categoriesQuery.data ?? []) as CategoryWithChannel[];
+
+  const grouped = allCategories.reduce<Record<string, { channelName: string; categories: CategoryWithChannel[] }>>(
+    (acc, cat) => {
+      const key = cat.channelId;
+      if (!acc[key]) {
+        acc[key] = {
+          channelName: cat.channel?.name ?? "Unknown Channel",
+          categories: [],
+        };
+      }
+      acc[key].categories.push(cat);
+      return acc;
+    },
+    {},
+  );
+
+  const createMutation = useMutation({
+    mutationFn: (payload: any) => adminCreateHomepageElement(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "homepage-elements"] });
+      onClose();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: any) =>
+      adminUpdateHomepageElement(element!.id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "homepage-elements"] });
+      onClose();
+    },
+  });
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  const handleSave = () => {
+    if (!selectedCategoryId) {
+      setError("Please select a category");
+      return;
+    }
+    setError("");
+
+    const selectedCat = allCategories.find((c) => c.id === selectedCategoryId);
+    const payload = {
+      type: "CATEGORY_ROW" as const,
+      title: title.trim() || selectedCat?.name || "Category Row",
+      categoryId: selectedCategoryId,
+      isActive,
+    };
+
+    if (isEdit) updateMutation.mutate(payload);
+    else createMutation.mutate(payload as any);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <Card className="mx-4 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+        <CardHeader>
+          <CardTitle>{isEdit ? "Edit" : "Create"} Category Row</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-surface-300">
+              Row Title
+            </label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Leave empty to use category name"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-surface-300">
+              Category
+            </label>
+            {categoriesQuery.isLoading ? (
+              <Spinner size="sm" />
+            ) : (
+              <select
+                className="w-full rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-white"
+                value={selectedCategoryId}
+                onChange={(e) => {
+                  setSelectedCategoryId(e.target.value);
+                  if (error) setError("");
+                }}
+              >
+                <option value="">Select a category...</option>
+                {Object.entries(grouped).map(([channelId, group]) => (
+                  <optgroup key={channelId} label={group.channelName}>
+                    {group.categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            )}
+            {error && (
+              <p className="mt-1 text-xs text-destructive">{error}</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="catRowActive"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
+              className="h-4 w-4 rounded border-surface-700 bg-surface-900 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="catRowActive" className="text-sm text-surface-300">
               Active
             </label>
           </div>

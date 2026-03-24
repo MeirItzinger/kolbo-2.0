@@ -29,7 +29,7 @@ export const getPlaybackToken = asyncHandler(
     const { profileId, deviceId } = req.query;
 
     const userId = req.user?.id ?? null;
-    const accessResult = await checkAccess(userId, videoId);
+    const accessResult = await checkAccess(userId, videoId, req.user?.roles);
 
     if (!accessResult.allowed) {
       throw ApiError.forbidden(accessResult.reason);
@@ -112,7 +112,7 @@ export const getPrerollAd = asyncHandler(
     if (!video) throw ApiError.notFound("Video not found");
 
     const userId = req.user?.id ?? null;
-    const accessResult = await checkAccess(userId, videoId);
+    const accessResult = await checkAccess(userId, videoId, req.user?.roles);
 
     if (!accessResult.allowed) {
       throw ApiError.forbidden(accessResult.reason);

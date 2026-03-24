@@ -81,7 +81,7 @@ export default function ChannelPageBuilderPage() {
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("SUPER_ADMIN");
   const channelId = !isSuperAdmin
-    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN")?.channelId ?? ""
+    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN" && r.channelId)?.channelId ?? ""
     : "";
 
   if (!channelId) {

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Film, Pencil, ExternalLink, Trash2 } from "lucide-react";
+import { Plus, Film, Pencil, ExternalLink, Trash2, Search, X } from "lucide-react";
 import { adminListVideos, adminListChannels, adminBulkDeleteVideos } from "@/api/admin";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
@@ -23,13 +23,24 @@ export default function AdminVideosPage() {
   const { user, hasRole } = useAuth();
   const isSuperAdmin = hasRole("SUPER_ADMIN");
   const channelAdminChannelId = !isSuperAdmin
-    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN")?.channelId ?? ""
+    ? user?.roles.find((r) => r.role?.key === "CHANNEL_ADMIN" && r.channelId)?.channelId ?? ""
     : "";
 
   const [channelFilter, setChannelFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(debounceRef.current);
+  }, [searchInput]);
 
   const qc = useQueryClient();
 
@@ -42,11 +53,12 @@ export default function AdminVideosPage() {
   });
 
   const videosQuery = useQuery({
-    queryKey: ["admin", "videos", { channelFilter: effectiveChannelFilter, statusFilter, page }],
+    queryKey: ["admin", "videos", { channelFilter: effectiveChannelFilter, statusFilter, search: searchQuery, page }],
     queryFn: () =>
       adminListVideos({
         channelId: effectiveChannelFilter || undefined,
         status: statusFilter || undefined,
+        search: searchQuery || undefined,
         page,
         perPage: 20,
       }),
@@ -123,6 +135,25 @@ export default function AdminVideosPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search videos…"
+            className="h-10 w-64 rounded-md border border-surface-700 bg-surface-900 pl-9 pr-8 text-sm text-surface-50 placeholder:text-surface-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-200"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         {isSuperAdmin && (
           <select
             value={channelFilter}

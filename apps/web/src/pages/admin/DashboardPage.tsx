@@ -29,7 +29,7 @@ export default function AdminDashboardPage() {
   const isSuperAdmin = hasRole("SUPER_ADMIN");
 
   const channelAdminChannelId = !isSuperAdmin
-    ? user?.roles?.find((r: any) => r.role?.key === "CHANNEL_ADMIN")?.channelId ?? ""
+    ? user?.roles?.find((r: any) => r.role?.key === "CHANNEL_ADMIN" && r.channelId)?.channelId ?? ""
     : "";
 
   const channelsQuery = useQuery({

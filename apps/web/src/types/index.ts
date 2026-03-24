@@ -318,7 +318,8 @@ export type HomepageElementType =
   | "CONTENT_ROW"
   | "CHANNEL_ROW"
   | "TEXT_DIVIDER"
-  | "LINE_DIVIDER";
+  | "LINE_DIVIDER"
+  | "CATEGORY_ROW";
 
 export interface HomepageElement {
   id: string;
@@ -329,6 +330,13 @@ export interface HomepageElement {
   subtitle: string | null;
   imageUrl: string | null;
   text: string | null;
+  categoryId?: string | null;
+  category?: {
+    id: string;
+    name: string;
+    slug: string;
+    channel?: { id: string; slug: string; name: string };
+  } | null;
   items?: HomepageElementItem[];
   createdAt: string;
   updatedAt: string;

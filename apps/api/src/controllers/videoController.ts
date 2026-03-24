@@ -377,7 +377,7 @@ export const getByIdOrSlug = asyncHandler(
       }
     }
 
-    const access = await checkAccess(req.user?.id ?? null, video.id);
+    const access = await checkAccess(req.user?.id ?? null, video.id, req.user?.roles);
     const payload = attachCategoriesToVideo(
       video as unknown as Record<string, unknown>,
     ) as Record<string, unknown>;

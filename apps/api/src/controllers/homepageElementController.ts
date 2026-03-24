@@ -23,6 +23,14 @@ export const list = asyncHandler(async (_req: Request, res: Response) => {
     where: { channelId: null },
     orderBy: { sortOrder: "asc" },
     include: {
+      category: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          channel: { select: { id: true, slug: true, name: true } },
+        },
+      },
       items: {
         orderBy: { sortOrder: "asc" },
         include: {
@@ -81,10 +89,16 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { type, title, subtitle, imageUrl, text, sortOrder, isActive, items } =
+  const { type, title, subtitle, imageUrl, text, sortOrder, isActive, items, categoryId } =
     req.body;
 
   if (!type) throw ApiError.badRequest("type is required");
+
+  if (type === "CATEGORY_ROW") {
+    if (!categoryId) throw ApiError.badRequest("categoryId is required for CATEGORY_ROW");
+    const cat = await prisma.category.findUnique({ where: { id: categoryId } });
+    if (!cat) throw ApiError.notFound("Category not found");
+  }
 
   const maxOrder = await prisma.homepageElement.aggregate({
     _max: { sortOrder: true },
@@ -101,6 +115,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
         text: text || null,
         sortOrder: nextOrder,
         isActive: isActive ?? true,
+        ...(categoryId && { categoryId }),
       },
     });
 
@@ -141,11 +156,16 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { title, subtitle, imageUrl, text, sortOrder, isActive, items } =
+  const { title, subtitle, imageUrl, text, sortOrder, isActive, items, categoryId } =
     req.body;
 
   const element = await prisma.homepageElement.findUnique({ where: { id } });
   if (!element) throw ApiError.notFound("Homepage element not found");
+
+  if (categoryId !== undefined && categoryId !== null) {
+    const cat = await prisma.category.findUnique({ where: { id: categoryId } });
+    if (!cat) throw ApiError.notFound("Category not found");
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.homepageElement.update({
@@ -157,6 +177,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
         ...(text !== undefined && { text: text || null }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isActive !== undefined && { isActive }),
+        ...(categoryId !== undefined && { categoryId: categoryId || null }),
       },
     });
 
