@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { Link, useSearchParams, useLocation } from "react-router-dom";
 import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
-import { Play, Search, Tv, X, Lock, Compass, LayoutGrid } from "lucide-react";
+import { Play, Search as SearchIcon, Tv, X, Lock, Compass, LayoutGrid } from "lucide-react";
 import { listChannels } from "@/api/channels";
 import { listVideos } from "@/api/videos";
 import { Input } from "@/components/ui/Input";
@@ -13,8 +13,16 @@ import type { Video } from "@/types";
 
 export default function ExplorePage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const channelFilter = searchParams.get("channel") ?? "";
   const [searchTerm, setSearchTerm] = useState("");
+
+  useEffect(() => {
+    if (location.pathname === "/search") {
+      searchInputRef.current?.focus();
+    }
+  }, [location.pathname]);
 
   const channelsQuery = useQuery({
     queryKey: ["explore", "channels"],
@@ -84,8 +92,9 @@ export default function ExplorePage() {
 
           {/* Search */}
           <div className="relative max-w-2xl">
-            <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-surface-500" />
+            <SearchIcon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-surface-500" />
             <Input
+              ref={searchInputRef}
               type="search"
               placeholder="Search videos…"
               value={searchTerm}
@@ -214,7 +223,7 @@ export default function ExplorePage() {
             <div className="py-20 text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-800">
                 {searchTerm ? (
-                  <Search className="h-7 w-7 text-surface-500" />
+                  <SearchIcon className="h-7 w-7 text-surface-500" />
                 ) : (
                   <Tv className="h-7 w-7 text-surface-500" />
                 )}

@@ -158,6 +158,7 @@ export function App() {
               <Route element={<PublicLayout />}>
                 <Route index element={<HomePage />} />
                 <Route path="explore" element={<ExplorePage />} />
+                <Route path="search" element={<ExplorePage />} />
                 <Route path="channels/:slug" element={<ChannelPage />} />
                 <Route path="videos/:slug" element={<VideoPage />} />
                 <Route path="pricing/:channelSlug" element={<PricingPage />} />

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, User, LogOut, ChevronDown, Shield, Megaphone } from "lucide-react";
+import { Menu, X, User, LogOut, ChevronDown, Shield, Megaphone, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
@@ -57,6 +57,19 @@ export default function PublicLayout() {
               }
             >
               Browse
+            </NavLink>
+            <NavLink
+              to="/search"
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-surface-800 text-white"
+                    : "text-surface-300 hover:bg-surface-800/50 hover:text-white"
+                }`
+              }
+            >
+              <Search className="h-3.5 w-3.5 opacity-80" />
+              Search
             </NavLink>
             {isAuthenticated && (
               <NavLink
@@ -180,6 +193,14 @@ export default function PublicLayout() {
               onClick={() => setMobileOpen(false)}
             >
               Browse
+            </NavLink>
+            <NavLink
+              to="/search"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-surface-300 hover:bg-surface-800 hover:text-white"
+              onClick={() => setMobileOpen(false)}
+            >
+              <Search className="h-4 w-4 opacity-80" />
+              Search
             </NavLink>
             {isAuthenticated && (
               <NavLink
