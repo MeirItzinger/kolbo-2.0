@@ -170,11 +170,16 @@ export default function WatchPage() {
           Playback unavailable
         </h2>
         <p className="mb-6 text-center text-surface-400">
-          Could not start playback. Try again from the video page.
+          Could not start playback. The server may be temporarily unavailable.
         </p>
-        <Button asChild>
-          <Link to={`/videos/${video.slug}`}>Back to video</Link>
-        </Button>
+        <div className="flex gap-3">
+          <Button onClick={() => tokenQuery.refetch()}>
+            Try again
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to={`/videos/${video.slug}`}>Back to video</Link>
+          </Button>
+        </div>
       </div>
     );
   }

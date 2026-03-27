@@ -8,6 +8,13 @@ function isMulterError(
   return err.name === "MulterError" && typeof (err as { code?: string }).code === "string";
 }
 
+function isPrismaConnectionError(err: Error): boolean {
+  return (
+    err.name === "PrismaClientKnownRequestError" &&
+    (err as { code?: string }).code === "P1001"
+  );
+}
+
 export const errorHandler = (
   err: Error,
   _req: Request,
@@ -36,6 +43,17 @@ export const errorHandler = (
       status: "error",
       statusCode: err.statusCode,
       message: err.message,
+    });
+    return;
+  }
+
+  if (isPrismaConnectionError(err)) {
+    console.error("Database connection error:", err.message);
+    res.status(503).json({
+      status: "error",
+      statusCode: 503,
+      message: "Service temporarily unavailable. Please try again in a moment.",
+      retryable: true,
     });
     return;
   }

@@ -909,8 +909,17 @@ function ChannelModalPlayer({
 
   if (tokenQuery.isError) {
     return (
-      <div className="p-6 text-center text-sm text-destructive">
-        Could not start playback. Try again or open the full watch page.
+      <div className="flex flex-col items-center gap-3 p-6 text-center">
+        <p className="text-sm text-destructive">
+          Could not start playback. The server may be temporarily unavailable.
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => tokenQuery.refetch()}
+        >
+          Try again
+        </Button>
       </div>
     );
   }

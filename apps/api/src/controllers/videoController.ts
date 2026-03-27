@@ -957,7 +957,14 @@ export const getAdminPreviewPlayback = asyncHandler(
 
     let token: string | null = null;
     if (asset.playbackPolicy === "SIGNED") {
-      token = createSignedPlaybackToken(asset.muxPlaybackId, user.id);
+      try {
+        token = createSignedPlaybackToken(asset.muxPlaybackId, user.id);
+      } catch (err) {
+        console.error(
+          `[preview-playback] Failed to sign token for playbackId=${asset.muxPlaybackId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
 
     res.json({

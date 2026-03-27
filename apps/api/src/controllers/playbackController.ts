@@ -72,7 +72,14 @@ export const getPlaybackToken = asyncHandler(
     let token: string | null = null;
 
     if (asset.playbackPolicy === "SIGNED") {
-      token = createSignedPlaybackToken(asset.muxPlaybackId, userId ?? "anon");
+      try {
+        token = createSignedPlaybackToken(asset.muxPlaybackId, userId ?? "anon");
+      } catch (err) {
+        console.error(
+          `[playback] Failed to sign token for video=${videoId} playbackId=${asset.muxPlaybackId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
 
     const sourceType =
