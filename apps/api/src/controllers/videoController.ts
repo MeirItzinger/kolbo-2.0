@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
 import { syncMuxAssetOnDemand, createSignedPlaybackToken } from "../services/mux/muxService";
 import { checkAccess } from "../services/access/accessService";
+import { extractUscreenAccessToken } from "../services/access/uscreenToken";
 import type { Prisma } from "@prisma/client";
 
 type DbClient = Prisma.TransactionClient;
@@ -377,7 +378,13 @@ export const getByIdOrSlug = asyncHandler(
       }
     }
 
-    const access = await checkAccess(req.user?.id ?? null, video.id, req.user?.roles);
+    const uscreenAccessToken = extractUscreenAccessToken(req.headers);
+    const access = await checkAccess(
+      req.user?.id ?? null,
+      video.id,
+      req.user?.roles,
+      { uscreenAccessToken }
+    );
     const payload = attachCategoriesToVideo(
       video as unknown as Record<string, unknown>,
     ) as Record<string, unknown>;

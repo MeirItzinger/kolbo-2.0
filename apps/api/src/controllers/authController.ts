@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import * as authService from "../services/auth/authService";
+import { loginViaUscreen } from "../services/access/uscreenAuthService";
+import { ApiError } from "../utils/apiError";
 
 export const signup = asyncHandler(async (req: Request, res: Response) => {
   const { email, password, firstName, lastName } = req.body;
@@ -10,6 +12,7 @@ export const signup = asyncHandler(async (req: Request, res: Response) => {
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
+
   const result = await authService.login(email, password);
 
   res.cookie("refreshToken", result.refreshToken, {
@@ -20,13 +23,41 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     path: "/api/auth/refresh",
   });
 
-  res.json({
+  return res.json({
     status: "success",
     data: {
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
       sessionId: result.sessionId,
       user: result.user,
+    },
+  });
+});
+
+export const loginToveedo = asyncHandler(async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+
+  const uscreen = await loginViaUscreen(email, password);
+
+  if (!uscreen.success || !uscreen.accessToken) {
+    throw ApiError.unauthorized("Invalid Toveedo credentials");
+  }
+
+  res.json({
+    status: "success",
+    data: {
+      accessToken: null,
+      refreshToken: null,
+      sessionId: null,
+      uscreenAccessToken: uscreen.accessToken,
+      channelSlug: "toveedo",
+      user: {
+        id: `uscreen_${uscreen.user?.id ?? "unknown"}`,
+        email: uscreen.user?.email ?? email,
+        firstName: uscreen.user?.name?.split(" ")[0] ?? "",
+        lastName: uscreen.user?.name?.split(" ").slice(1).join(" ") ?? "",
+        roles: [],
+      },
     },
   });
 });

@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/apiError";
+import { validateUscreenAccessToken } from "./uscreenAuthService";
 import type {
   AccessSourceType,
   AdTier,
@@ -16,6 +17,10 @@ export interface AccessCheckResult {
   maxConcurrentStreams: number;
   playbackPolicy: PlaybackPolicy;
   tokenRequired: boolean;
+}
+
+export interface CheckAccessOptions {
+  uscreenAccessToken?: string | null;
 }
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
@@ -101,7 +106,8 @@ async function subscriptionVariantFields(sub: {
 export async function checkAccess(
   userId: string | null,
   videoId: string,
-  userRoles?: Array<{ key: string; channelId?: string }>
+  userRoles?: Array<{ key: string; channelId?: string }>,
+  options?: CheckAccessOptions
 ): Promise<AccessCheckResult> {
   const video = await prisma.video.findUnique({
     where: { id: videoId },
@@ -139,6 +145,34 @@ export async function checkAccess(
     playbackPolicy: asset.playbackPolicy,
     tokenRequired: asset.playbackPolicy === "SIGNED",
   };
+  const uscreenToken = options?.uscreenAccessToken?.trim() || null;
+  let uscreenValidationPromise:
+    | Promise<Awaited<ReturnType<typeof validateUscreenAccessToken>>>
+    | null = null;
+  const getUscreenValidation = async () => {
+    if (!uscreenToken) return { valid: false };
+    if (!uscreenValidationPromise) {
+      uscreenValidationPromise = validateUscreenAccessToken(uscreenToken);
+    }
+    return uscreenValidationPromise;
+  };
+
+  const videoChannel = await prisma.channel.findUnique({
+    where: { id: video.channelId },
+    select: { slug: true },
+  });
+
+  const isUscreenAllowedForChannel =
+    (videoChannel?.slug ?? "").trim().toLowerCase() === "toveedo";
+
+  const uscreenAllowedResult = (): AccessCheckResult => ({
+    allowed: true,
+    reason: "Toveedo membership",
+    accessType: "SUBSCRIPTION",
+    adMode: "none",
+    maxConcurrentStreams: 3,
+    ...baseResult,
+  });
 
   // 1. Free access
   if (video.isFree) {
@@ -165,6 +199,10 @@ export async function checkAccess(
   }
 
   if (!userId) {
+    const uscreen = await getUscreenValidation();
+    if (uscreen.valid && isUscreenAllowedForChannel) {
+      return uscreenAllowedResult();
+    }
     return {
       allowed: false,
       reason: "Authentication required to view this content",
@@ -362,6 +400,12 @@ export async function checkAccess(
       ),
       ...baseResult,
     };
+  }
+
+  // Toveedo / Uscreen fallback — only grants access for videos in the toveedo channel
+  const uscreen = await getUscreenValidation();
+  if (uscreen.valid && isUscreenAllowedForChannel) {
+    return uscreenAllowedResult();
   }
 
   return {

@@ -6,6 +6,7 @@ import {
   checkConcurrency,
   createWatchSession,
 } from "../services/access/accessService";
+import { extractUscreenAccessToken } from "../services/access/uscreenToken";
 import { createSignedPlaybackToken } from "../services/mux/muxService";
 import { prisma } from "../lib/prisma";
 import type { AccessSourceType } from "@prisma/client";
@@ -29,7 +30,10 @@ export const getPlaybackToken = asyncHandler(
     const { profileId, deviceId } = req.query;
 
     const userId = req.user?.id ?? null;
-    const accessResult = await checkAccess(userId, videoId, req.user?.roles);
+    const uscreenAccessToken = extractUscreenAccessToken(req.headers);
+    const accessResult = await checkAccess(userId, videoId, req.user?.roles, {
+      uscreenAccessToken,
+    });
 
     if (!accessResult.allowed) {
       throw ApiError.forbidden(accessResult.reason);
@@ -112,7 +116,10 @@ export const getPrerollAd = asyncHandler(
     if (!video) throw ApiError.notFound("Video not found");
 
     const userId = req.user?.id ?? null;
-    const accessResult = await checkAccess(userId, videoId, req.user?.roles);
+    const uscreenAccessToken = extractUscreenAccessToken(req.headers);
+    const accessResult = await checkAccess(userId, videoId, req.user?.roles, {
+      uscreenAccessToken,
+    });
 
     if (!accessResult.allowed) {
       throw ApiError.forbidden(accessResult.reason);

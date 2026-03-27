@@ -26,6 +26,14 @@ export async function login(payload: {
   return data.data ?? data;
 }
 
+export async function loginToveedo(payload: {
+  email: string;
+  password: string;
+}): Promise<LoginResponse & { uscreenAccessToken?: string; channelSlug?: string }> {
+  const { data } = await api.post("/auth/login/toveedo", payload);
+  return data.data ?? data;
+}
+
 export async function logout(): Promise<void> {
   await api.post("/auth/logout");
 }

@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, LogIn } from "lucide-react";
+import { Eye, EyeOff, LogIn, Tv } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -22,13 +22,15 @@ const loginSchema = z.object({
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
+type LoginMode = "kolbo" | "toveedo";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, loginToveedo } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [mode, setMode] = useState<LoginMode>("kolbo");
 
   const rawFrom = (location.state as {
     from?: string | { pathname: string; search?: string };
@@ -49,23 +51,35 @@ export default function LoginPage() {
     defaultValues: { email: "", password: "" },
   });
 
+  const switchMode = (newMode: LoginMode) => {
+    setMode(newMode);
+    setServerError(null);
+  };
+
   const onSubmit = async (values: LoginValues) => {
     setServerError(null);
     try {
-      const user = await login(values.email, values.password);
-      const isSuperAdmin = user.roles.some((r: any) => (r.role?.key ?? r) === "SUPER_ADMIN");
-      const channelAdminRole = user.roles.find((r: any) => (r.role?.key ?? r) === "CHANNEL_ADMIN");
-      const creatorAdminRole = user.roles.find((r: any) => (r.role?.key ?? r) === "CREATOR_ADMIN");
-      if (isSuperAdmin || channelAdminRole) {
-        navigate("/admin", { replace: true });
-      } else if (creatorAdminRole?.creatorProfileId) {
-        navigate(`/creator-admin/${creatorAdminRole.creatorProfileId}`, { replace: true });
+      if (mode === "toveedo") {
+        await loginToveedo(values.email, values.password);
+        navigate("/channels/toveedo", { replace: true });
       } else {
-        navigate(from, { replace: true });
+        const user = await login(values.email, values.password);
+        const isSuperAdmin = user.roles.some((r: any) => (r.role?.key ?? r) === "SUPER_ADMIN");
+        const channelAdminRole = user.roles.find((r: any) => (r.role?.key ?? r) === "CHANNEL_ADMIN");
+        const creatorAdminRole = user.roles.find((r: any) => (r.role?.key ?? r) === "CREATOR_ADMIN");
+        if (isSuperAdmin || channelAdminRole) {
+          navigate("/admin", { replace: true });
+        } else if (creatorAdminRole?.creatorProfileId) {
+          navigate(`/creator-admin/${creatorAdminRole.creatorProfileId}`, { replace: true });
+        } else {
+          navigate(from, { replace: true });
+        }
       }
     } catch (err: any) {
       setServerError(
-        err?.response?.data?.message ?? "Invalid email or password",
+        err?.response?.data?.message ?? (mode === "toveedo"
+          ? "Invalid Toveedo credentials"
+          : "Invalid email or password"),
       );
     }
   };
@@ -73,13 +87,45 @@ export default function LoginPage() {
   return (
     <Card className="border-surface-800">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Welcome back</CardTitle>
+        <CardTitle className="text-2xl">
+          {mode === "toveedo" ? "Toveedo Login" : "Welcome back"}
+        </CardTitle>
         <CardDescription className="text-surface-400">
-          Sign in to your Kolbo account
+          {mode === "toveedo"
+            ? "Sign in with your Toveedo account to watch Toveedo content"
+            : "Sign in to your Kolbo account"}
         </CardDescription>
       </CardHeader>
 
-      <CardContent>
+      <CardContent className="space-y-4">
+        {/* Mode toggle */}
+        <div className="flex rounded-lg border border-surface-700 p-1">
+          <button
+            type="button"
+            onClick={() => switchMode("kolbo")}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              mode === "kolbo"
+                ? "bg-primary-600 text-white"
+                : "text-surface-400 hover:text-surface-200"
+            }`}
+          >
+            <LogIn className="h-4 w-4" />
+            Kolbo Account
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode("toveedo")}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              mode === "toveedo"
+                ? "bg-emerald-600 text-white"
+                : "text-surface-400 hover:text-surface-200"
+            }`}
+          >
+            <Tv className="h-4 w-4" />
+            Toveedo
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {serverError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -108,12 +154,14 @@ export default function LoginPage() {
               <label htmlFor="password" className="text-sm font-medium text-surface-200">
                 Password
               </label>
-              <Link
-                to="/forgot-password"
-                className="text-xs text-primary-400 hover:text-primary-300"
-              >
-                Forgot password?
-              </Link>
+              {mode === "kolbo" && (
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-primary-400 hover:text-primary-300"
+                >
+                  Forgot password?
+                </Link>
+              )}
             </div>
             <div className="relative">
               <Input
@@ -144,9 +192,18 @@ export default function LoginPage() {
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            className={`w-full ${mode === "toveedo" ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+            disabled={isSubmitting}
+          >
             {isSubmitting ? (
               "Signing in…"
+            ) : mode === "toveedo" ? (
+              <>
+                <Tv className="h-4 w-4" />
+                Sign in with Toveedo
+              </>
             ) : (
               <>
                 <LogIn className="h-4 w-4" />
@@ -157,17 +214,29 @@ export default function LoginPage() {
         </form>
       </CardContent>
 
-      <CardFooter className="justify-center">
-        <p className="text-sm text-surface-400">
-          Don&apos;t have an account?{" "}
-          <Link
-            to="/signup"
-            className="font-medium text-primary-400 hover:text-primary-300"
-          >
-            Sign up
-          </Link>
-        </p>
-      </CardFooter>
+      {mode === "kolbo" && (
+        <CardFooter className="justify-center">
+          <p className="text-sm text-surface-400">
+            Don&apos;t have an account?{" "}
+            <Link
+              to="/signup"
+              className="font-medium text-primary-400 hover:text-primary-300"
+            >
+              Sign up
+            </Link>
+          </p>
+        </CardFooter>
+      )}
+
+      {mode === "toveedo" && (
+        <CardFooter className="justify-center">
+          <p className="text-center text-xs text-surface-500">
+            Use your existing Toveedo / Uscreen credentials.
+            <br />
+            This gives you access to Toveedo content only.
+          </p>
+        </CardFooter>
+      )}
     </Card>
   );
 }

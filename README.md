@@ -159,6 +159,8 @@ After seeding:
 | `MUX_WEBHOOK_SECRET`      | Mux webhook signing secret                     |
 | `MUX_SIGNING_KEY_PRIVATE` | Base64-encoded RSA private key for Mux playback |
 | `MUX_SIGNING_KEY_ID`      | Mux signing key ID                             |
+| `USCREEN_API_BASE_URL`    | Uscreen API base URL for fallback auth check   |
+| `USCREEN_ME_PATH`         | Uscreen endpoint used to validate access token |
 
 ### Frontend (`apps/web/.env`)
 
@@ -286,9 +288,12 @@ Roles: `SUPER_ADMIN`, `CHANNEL_ADMIN`, `CREATOR_ADMIN`, `USER`
 ### Playback
 | Method | Path                              | Auth   |
 | ------ | --------------------------------- | ------ |
-| GET    | `/api/playback/token/:videoId`    | Auth   |
+| GET    | `/api/playback/token/:videoId`    | Optional |
 | POST   | `/api/watch-sessions/heartbeat`   | Auth   |
 | POST   | `/api/watch-sessions/end`         | Auth   |
+
+`/api/playback/token/:videoId` and `/api/videos/:idOrSlug` accept optional Uscreen token headers for fallback entitlement:
+- `X-Uscreen-Access-Token: <token>` (preferred)
 
 ### Account
 | Method | Path                                    | Auth   |

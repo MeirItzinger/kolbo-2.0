@@ -6,14 +6,23 @@ import {
 } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import * as authApi from "@/api/auth";
-import { setTokens, clearTokens, getAccessToken } from "@/api/client";
+import {
+  setTokens,
+  clearTokens,
+  getAccessToken,
+  setUscreenAccessToken,
+  clearUscreenAccessToken,
+  getUscreenAccessToken,
+} from "@/api/client";
 import type { User, RoleName } from "@/types";
 
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isToveedoUser: boolean;
   login: (email: string, password: string) => Promise<User>;
+  loginToveedo: (email: string, password: string) => Promise<User>;
   signup: (payload: {
     email: string;
     password: string;
@@ -41,7 +50,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   } = useQuery<User | null>({
     queryKey: AUTH_QUERY_KEY,
     queryFn: async () => {
-      if (!getAccessToken()) return null;
+      if (!getAccessToken()) {
+        // Uscreen-only session: user object lives in sessionStorage
+        const uscreenUser = sessionStorage.getItem("kolbo_uscreen_user");
+        if (uscreenUser && getUscreenAccessToken()) {
+          try {
+            return JSON.parse(uscreenUser) as User;
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      }
       try {
         return await authApi.getMe();
       } catch {
@@ -56,8 +76,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginMutation = useMutation({
     mutationFn: (vars: { email: string; password: string }) =>
       authApi.login(vars),
-    onSuccess: (res) => {
+    onSuccess: (res: any) => {
       setTokens(res.accessToken, res.refreshToken ?? res.sessionId);
+      qc.setQueryData(AUTH_QUERY_KEY, res.user);
+    },
+  });
+
+  const loginToveedoMutation = useMutation({
+    mutationFn: (vars: { email: string; password: string }) =>
+      authApi.loginToveedo(vars),
+    onSuccess: (res: any) => {
+      if (res.uscreenAccessToken) {
+        clearTokens();
+        setUscreenAccessToken(res.uscreenAccessToken);
+        const userWithChannel = { ...res.user, channelSlug: res.channelSlug ?? "toveedo" };
+        sessionStorage.setItem("kolbo_uscreen_user", JSON.stringify(userWithChannel));
+      }
       qc.setQueryData(AUTH_QUERY_KEY, res.user);
     },
   });
@@ -71,9 +105,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const logoutMutation = useMutation({
-    mutationFn: authApi.logout,
+    mutationFn: async () => {
+      if (getAccessToken()) {
+        await authApi.logout();
+      }
+    },
     onSettled: () => {
       clearTokens();
+      clearUscreenAccessToken();
+      sessionStorage.removeItem("kolbo_uscreen_user");
       qc.setQueryData(AUTH_QUERY_KEY, null);
       qc.clear();
     },
@@ -85,6 +125,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return result.user;
     },
     [loginMutation],
+  );
+
+  const loginToveedo = useCallback(
+    async (email: string, password: string) => {
+      const result = await loginToveedoMutation.mutateAsync({ email, password });
+      return result.user;
+    },
+    [loginToveedoMutation],
   );
 
   const signup = useCallback(
@@ -119,13 +167,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user],
   );
 
+  const isToveedoUser = !!user && !getAccessToken() && !!getUscreenAccessToken();
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isLoading,
         isAuthenticated: !!user,
+        isToveedoUser,
         login,
+        loginToveedo,
         signup,
         logout,
         hasRole,

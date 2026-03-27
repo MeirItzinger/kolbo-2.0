@@ -56,6 +56,12 @@ export const env = {
   MUX_WEBHOOK_SECRET: required("MUX_WEBHOOK_SECRET"),
   MUX_SIGNING_KEY_PRIVATE: required("MUX_SIGNING_KEY_PRIVATE"),
   MUX_SIGNING_KEY_ID: required("MUX_SIGNING_KEY_ID"),
+  USCREEN_API_BASE_URL: optional(
+    "USCREEN_API_BASE_URL",
+    "https://api.uscreen.io/api/v2"
+  ),
+  USCREEN_ME_PATH: optional("USCREEN_ME_PATH", "/users/me"),
+  USCREEN_STORE_TOKEN: optional("USCREEN_STORE_TOKEN", "2VNQNcZOB+fs2Q=="),
 
   get isDev() {
     return this.NODE_ENV === "development";

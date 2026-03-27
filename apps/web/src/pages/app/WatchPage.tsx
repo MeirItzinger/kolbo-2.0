@@ -3,7 +3,7 @@ import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { getVideo } from "@/api/videos";
-import { api } from "@/api/client";
+import { api, getUscreenAccessToken } from "@/api/client";
 import { VideoPlayer } from "@/features/player/VideoPlayer";
 import { PrerollAd } from "@/features/player/PrerollAd";
 import { Button } from "@/components/ui/Button";
@@ -32,6 +32,8 @@ async function getPlaybackToken(videoId: string): Promise<PlaybackData> {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
+  const uscreenToken = getUscreenAccessToken();
+  if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
   const { data } = await axios.get(`${API_BASE}/playback/token/${videoId}`, { headers });
   return data?.data ?? data;
 }
@@ -40,6 +42,8 @@ async function getPrerollAd(videoId: string): Promise<AdData | null> {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
+  const uscreenToken = getUscreenAccessToken();
+  if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
   const { data } = await axios.get(`${API_BASE}/playback/ad/${videoId}`, {
     headers,
   });

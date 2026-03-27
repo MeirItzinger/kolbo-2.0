@@ -2,6 +2,11 @@ import axios from "axios";
 
 const TOKEN_KEY = "kolbo_access_token";
 const REFRESH_KEY = "kolbo_refresh_token";
+const USCREEN_TOKEN_KEYS = [
+  "kolbo_uscreen_access_token",
+  "uscreen_access_token",
+  "toveedo_access_token",
+] as const;
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
@@ -13,6 +18,10 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  const uscreenToken = getUscreenAccessToken();
+  if (uscreenToken) {
+    config.headers["X-Uscreen-Access-Token"] = uscreenToken;
   }
   return config;
 });
@@ -120,8 +129,15 @@ api.interceptors.response.use(
   },
   async (error) => {
     const original = error.config;
+    const accessToken = getAccessToken();
 
     if (error.response?.status !== 401 || original._retry) {
+      return Promise.reject(error);
+    }
+
+    // Uscreen/Toveedo-only sessions do not have Kolbo JWT/refresh tokens.
+    // For those sessions, do not run refresh flow or hard-redirect to /login.
+    if (!accessToken) {
       return Promise.reject(error);
     }
 
@@ -171,4 +187,22 @@ export function clearTokens() {
 
 export function getAccessToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
+}
+
+export function getUscreenAccessToken(): string | null {
+  for (const key of USCREEN_TOKEN_KEYS) {
+    const value = localStorage.getItem(key);
+    if (value?.trim()) return value.trim();
+  }
+  return null;
+}
+
+export function setUscreenAccessToken(token: string) {
+  localStorage.setItem(USCREEN_TOKEN_KEYS[0], token);
+}
+
+export function clearUscreenAccessToken() {
+  for (const key of USCREEN_TOKEN_KEYS) {
+    localStorage.removeItem(key);
+  }
 }

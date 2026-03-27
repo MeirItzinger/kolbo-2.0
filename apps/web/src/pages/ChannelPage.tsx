@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import axios from "axios";
@@ -19,7 +19,7 @@ import { VideoPlayer } from "@/features/player/VideoPlayer";
 import { PrerollAd } from "@/features/player/PrerollAd";
 import { getChannel, getChannelPageElements, getChannelCategories } from "@/api/channels";
 import { listVideos, getVideo } from "@/api/videos";
-import { api, resolveUploadedAssetUrl } from "@/api/client";
+import { api, resolveUploadedAssetUrl, getUscreenAccessToken } from "@/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -37,7 +37,7 @@ import type { Video, SubscriptionPlan, PlanPriceVariant, HomepageElement, Catego
 export default function ChannelPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAuthenticated, hasRole } = useAuth();
+  const { isAuthenticated, isToveedoUser, hasRole } = useAuth();
   const queryClient = useQueryClient();
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -99,7 +99,7 @@ export default function ChannelPage() {
       const { data } = await api.get("/account/subscriptions");
       return data.data ?? data;
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isToveedoUser,
     staleTime: 1000 * 60 * 2,
   });
 
@@ -109,7 +109,7 @@ export default function ChannelPage() {
       const { data } = await api.get("/account/rentals");
       return data.data ?? data;
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isToveedoUser,
     staleTime: 1000 * 60,
   });
 
@@ -119,7 +119,7 @@ export default function ChannelPage() {
       const { data } = await api.get("/account/purchases");
       return data.data ?? data;
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isToveedoUser,
     staleTime: 1000 * 60,
   });
 
@@ -156,6 +156,20 @@ export default function ChannelPage() {
   })();
 
   const videos: Video[] = videosQuery.data?.pages.flatMap((p) => p.data) ?? [];
+  const videosByCategory = useMemo(() => {
+    const map = new Map<string, Video[]>();
+    for (const v of videos) {
+      for (const c of v.categories ?? []) {
+        const existing = map.get(c.id);
+        if (existing) {
+          existing.push(v);
+        } else {
+          map.set(c.id, [v]);
+        }
+      }
+    }
+    return map;
+  }, [videos]);
 
   type UnifiedPageItem =
     | { kind: "element"; sortOrder: number; data: HomepageElement }
@@ -223,6 +237,8 @@ export default function ChannelPage() {
     if (!detailData) return false;
     // Public playback (no subscription required)
     if (detailData.isFree || detailData.freeWithAds) return true;
+    // Backend-computed entitlement (Stripe subs, rentals, Uscreen/Toveedo, etc.)
+    if (detailData.playbackAllowed === true) return true;
     if (!isAuthenticated) return false;
     if (hasRole("SUPER_ADMIN")) return true;
     if (hasChannelSub) return true;
@@ -411,6 +427,13 @@ export default function ChannelPage() {
               : "max-w-md"
           }
         >
+          {/* Always provide an accessible title/description for DialogContent */}
+          <DialogHeader className="sr-only">
+            <DialogTitle>{detailData?.title ?? selectedVideo?.title ?? "Video details"}</DialogTitle>
+            <DialogDescription>
+              Video playback and access options.
+            </DialogDescription>
+          </DialogHeader>
           {videoDetailQuery.isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Spinner />
@@ -490,7 +513,7 @@ function CategoryRow({
     el.scrollBy({ left: direction === "left" ? -amount : amount, behavior: "smooth" });
   };
 
-  if (videosQuery.isSuccess && videos.length === 0) return null;
+  if (videos.length === 0) return null;
 
   return (
     <div>
@@ -515,22 +538,16 @@ function CategoryRow({
           )}
         </div>
       </div>
-      {videosQuery.isLoading ? (
-        <div className="flex justify-center py-4">
-          <Spinner size="sm" />
-        </div>
-      ) : (
-        <div
-          ref={scrollRef}
-          className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
-        >
-          {videos.map((v) => (
-            <div key={v.id} className="w-48 flex-shrink-0 sm:w-52">
-              <VideoCard video={v} onClick={() => onVideoClick(v)} />
-            </div>
-          ))}
-        </div>
-      )}
+      <div
+        ref={scrollRef}
+        className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
+      >
+        {videos.map((v) => (
+          <div key={v.id} className="w-48 flex-shrink-0 sm:w-52">
+            <VideoCard video={v} onClick={() => onVideoClick(v)} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -787,6 +804,8 @@ async function fetchPlaybackTokenForModal(videoId: string) {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
+  const uscreenToken = getUscreenAccessToken();
+  if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
   const { data } = await axios.get(
     `${PLAYBACK_API_BASE}/playback/token/${videoId}`,
     { headers },
@@ -798,6 +817,8 @@ async function fetchPrerollAdForModal(videoId: string) {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
+  const uscreenToken = getUscreenAccessToken();
+  if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
   const { data } = await axios.get(
     `${PLAYBACK_API_BASE}/playback/ad/${videoId}`,
     { headers },
