@@ -27,6 +27,7 @@ import advertiserCampaignRoutes from "./advertiserCampaigns";
 import advertiserPaymentRoutes from "./advertiserPayments";
 import adminAdCampaignRoutes from "./adminAdCampaigns";
 import adminAdvertiserRoutes from "./adminAdvertisers";
+import subtitleRoutes from "./subtitles";
 
 const router = Router();
 
@@ -59,5 +60,6 @@ router.use("/advertiser/campaigns", advertiserCampaignRoutes);
 router.use("/advertiser/payment-methods", advertiserPaymentRoutes);
 router.use("/admin/ad-campaigns", adminAdCampaignRoutes);
 router.use("/admin/advertisers", adminAdvertiserRoutes);
+router.use("/subtitles", subtitleRoutes);
 
 export default router;

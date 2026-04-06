@@ -63,6 +63,8 @@ export const env = {
   USCREEN_ME_PATH: optional("USCREEN_ME_PATH", "/users/me"),
   USCREEN_STORE_TOKEN: optional("USCREEN_STORE_TOKEN", "2VNQNcZOB+fs2Q=="),
 
+  DEEPL_API_KEY: optional("DEEPL_API_KEY", ""),
+
   get isDev() {
     return this.NODE_ENV === "development";
   },

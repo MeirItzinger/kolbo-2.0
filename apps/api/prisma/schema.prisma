@@ -590,12 +590,30 @@ model VideoAsset {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  video          Video           @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  subtitleTracks SubtitleTrack[]
 
   @@index([videoId])
   @@index([muxAssetId])
   @@index([muxUploadId])
   @@index([muxPlaybackId])
+}
+
+model SubtitleTrack {
+  id           String     @id @default(cuid())
+  videoAssetId String
+  muxTrackId   String?    @unique
+  languageCode String
+  name         String
+  status       String     @default("preparing")
+  source       String     @default("generated")
+  vttContent   String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  videoAsset   VideoAsset @relation(fields: [videoAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([videoAssetId, languageCode])
+  @@index([videoAssetId])
 }
 
 model ThumbnailAsset {

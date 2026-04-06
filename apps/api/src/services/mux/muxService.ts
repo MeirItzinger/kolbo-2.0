@@ -41,7 +41,14 @@ export async function createDirectUpload(
     new_asset_settings: {
       playback_policy: ["public"],
       video_quality: "basic",
-    },
+      input: [
+        {
+          generated_subtitles: [
+            { language_code: "en", name: "English" },
+          ],
+        },
+      ],
+    } as any,
   });
 
   await prisma.videoAsset.create({

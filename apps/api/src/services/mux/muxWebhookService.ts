@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { syncAssetFromWebhook } from "./muxService";
+import { handleTrackReady } from "../subtitle/subtitleService";
 import type { AssetStatus } from "@prisma/client";
 
 interface MuxWebhookEvent {
@@ -26,6 +27,9 @@ export async function handleWebhookEvent(
       break;
     case "video.upload.asset_created":
       await handleUploadAssetCreated(event);
+      break;
+    case "video.asset.track.ready":
+      await handleAssetTrackReady(event);
       break;
     default:
       break;
@@ -133,5 +137,32 @@ async function handleUploadAssetCreated(
       muxAssetId,
       assetStatus: "UPLOADED",
     },
+  });
+}
+
+async function handleAssetTrackReady(event: MuxWebhookEvent): Promise<void> {
+  const data = event.data as {
+    asset_id?: string;
+    id: string;
+    type: string;
+    text_type?: string;
+    language_code?: string;
+    name?: string;
+    status?: string;
+  };
+
+  const assetId = data.asset_id ?? event.object?.id;
+  if (!assetId) {
+    console.warn("[mux-webhook] track.ready event missing asset_id");
+    return;
+  }
+
+  await handleTrackReady(assetId, {
+    id: data.id,
+    type: data.type,
+    text_type: data.text_type,
+    language_code: data.language_code,
+    name: data.name,
+    status: data.status,
   });
 }
