@@ -13,6 +13,9 @@ router.post("/verify-email", authController.verifyEmail);
 router.post("/resend-verification", authController.resendVerification);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
+router.post("/change-password", authenticate, authController.changePassword);
+router.get("/invite/:token", authController.getInvite);
+router.post("/accept-invite", authController.acceptInvite);
 router.get("/me", authenticate, authController.me);
 
 export default router;

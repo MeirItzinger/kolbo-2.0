@@ -132,3 +132,52 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
   const user = await authService.getCurrentUser(req.user!.id);
   res.json({ status: "success", data: user });
 });
+
+export const changePassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { currentPassword, newPassword, sessionId } = req.body;
+    const result = await authService.changePassword(
+      req.user!.id,
+      currentPassword,
+      newPassword,
+      sessionId
+    );
+    res.json({ status: "success", ...result });
+  }
+);
+
+export const getInvite = asyncHandler(async (req: Request, res: Response) => {
+  const { token } = req.params;
+  const invite = await authService.getInvite(token);
+  res.json({ status: "success", data: invite });
+});
+
+export const acceptInvite = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { token, password, firstName, lastName } = req.body;
+    const result = await authService.acceptInvite(
+      token,
+      password,
+      firstName,
+      lastName
+    );
+
+    res.cookie("refreshToken", result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/api/auth/refresh",
+    });
+
+    res.status(201).json({
+      status: "success",
+      data: {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        sessionId: result.sessionId,
+        user: result.user,
+      },
+    });
+  }
+);

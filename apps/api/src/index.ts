@@ -64,6 +64,16 @@ app.get("/health", healthHandler);
 /** Same JSON at `/api/health` so Vercel can route only `/api/*` to serverless. */
 app.get("/api/health", healthHandler);
 
+/** Root URL — browsers often open `/` first; API lives under `/api` and `/health`. */
+app.get("/", (_req, res) => {
+  res.json({
+    status: "ok",
+    service: "kolbo-api",
+    message: "Use /health for a health check or /api/* for REST routes.",
+    links: { health: "/health", apiHealth: "/api/health" },
+  });
+});
+
 // ─── Static uploads ──────────────────────────────────────
 const uploadDir = path.resolve(__dirname, "../uploads");
 /** Local / traditional hosting: `/uploads/*` */

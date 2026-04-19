@@ -17,6 +17,7 @@ import {
   DollarSign,
   Megaphone,
   Building2,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { adminGetChannel } from "@/api/admin";
@@ -34,6 +35,7 @@ const superAdminLinks = [
   { to: "/admin/homepage-builder", label: "Homepage Builder", icon: PanelsTopLeft, end: false },
   { to: "/admin/ad-campaigns", label: "Ad Campaigns", icon: Megaphone, end: false },
   { to: "/admin/advertisers", label: "Advertisers", icon: Building2, end: false },
+  { to: "/admin/users", label: "Users", icon: Users, end: false },
 ];
 
 export default function AdminLayout() {

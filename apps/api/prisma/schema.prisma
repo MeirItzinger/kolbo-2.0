@@ -200,21 +200,24 @@ enum AdCreativeStatus {
 // ─── AUTH / USERS ────────────────────────────────────────
 
 model User {
-  id               String    @id @default(cuid())
-  email            String    @unique
-  emailVerifiedAt  DateTime?
-  passwordHash     String
-  firstName        String
-  lastName         String
-  stripeCustomerId String?   @unique
-  isActive         Boolean   @default(true)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  emailVerifiedAt       DateTime?
+  passwordHash          String?
+  firstName             String
+  lastName              String
+  stripeCustomerId      String?   @unique
+  isActive              Boolean   @default(true)
+  mustChangePassword    Boolean   @default(false)
+  lastPasswordChangedAt DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   roles                  UserRole[]
   sessions               Session[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens    PasswordResetToken[]
+  inviteTokens           InviteToken[]
   profiles               Profile[]
   devices                Device[]
   channelAdmins          ChannelAdmin[]
@@ -301,6 +304,23 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([tokenHash])
+}
+
+model InviteToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  context     Json?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
 }
 
 model Profile {

@@ -14,12 +14,17 @@ import {
   LayoutDashboard,
   Upload,
   X,
+  Copy,
+  CheckCircle2,
+  Mail,
 } from "lucide-react";
 import {
   adminListChannels,
   adminCreateChannel,
   adminDeleteChannel,
   uploadImage,
+  type AdminProvisionInfo,
+  type ChannelWithAdmin,
 } from "@/api/admin";
 import { resolveUploadedAssetUrl } from "@/api/client";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +56,10 @@ const channelSchema = z.object({
   logoUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   bannerUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   defaultCurrency: z.string().optional(),
+  adminEmail: z.string().email("Valid email required"),
+  adminFirstName: z.string().optional(),
+  adminLastName: z.string().optional(),
+  adminSendEmail: z.boolean().optional(),
 });
 
 type ChannelFormData = z.infer<typeof channelSchema>;
@@ -59,6 +68,10 @@ export default function AdminChannelsPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Channel | null>(null);
+  const [provisioned, setProvisioned] = useState<{
+    channelName: string;
+    admin: AdminProvisionInfo;
+  } | null>(null);
 
   const channelsQuery = useQuery({
     queryKey: ["admin", "channels"],
@@ -182,7 +195,33 @@ export default function AdminChannelsPage() {
 
       {/* Create dialog */}
       {showCreate && (
-        <CreateChannelDialog onClose={() => setShowCreate(false)} />
+        <CreateChannelDialog
+          onClose={() => setShowCreate(false)}
+          onCreated={(channel) => {
+            setShowCreate(false);
+            if (channel.admin) {
+              setProvisioned({
+                channelName: channel.name,
+                admin: channel.admin,
+              });
+            }
+          }}
+        />
+      )}
+
+      {provisioned && (
+        <InviteLinkDialog
+          title={`${provisioned.channelName} created`}
+          subtitle={
+            provisioned.admin.alreadyHadAccount
+              ? `${provisioned.admin.email} already has a Kolbo account, so no invite was needed. They are now a channel admin.`
+              : provisioned.admin.invitedByEmail
+                ? `An invite email has been sent to ${provisioned.admin.email}. You can also share the link below.`
+                : `Share this invite link with ${provisioned.admin.email}. The link is valid for 7 days.`
+          }
+          inviteUrl={provisioned.admin.inviteUrl}
+          onClose={() => setProvisioned(null)}
+        />
       )}
 
       {/* Delete confirmation */}
@@ -230,7 +269,13 @@ function createChannelErrorMessage(err: unknown): string {
   return "Failed to create channel";
 }
 
-function CreateChannelDialog({ onClose }: { onClose: () => void }) {
+function CreateChannelDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (channel: ChannelWithAdmin) => void;
+}) {
   const qc = useQueryClient();
   const logoFileRef = useRef<HTMLInputElement>(null);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -255,6 +300,10 @@ function CreateChannelDialog({ onClose }: { onClose: () => void }) {
       logoUrl: "",
       bannerUrl: "",
       defaultCurrency: "usd",
+      adminEmail: "",
+      adminFirstName: "",
+      adminLastName: "",
+      adminSendEmail: true,
     },
   });
 
@@ -262,9 +311,9 @@ function CreateChannelDialog({ onClose }: { onClose: () => void }) {
 
   const createMutation = useMutation({
     mutationFn: adminCreateChannel,
-    onSuccess: () => {
+    onSuccess: (channel) => {
       qc.invalidateQueries({ queryKey: ["admin", "channels"] });
-      onClose();
+      onCreated(channel);
     },
   });
 
@@ -298,11 +347,24 @@ function CreateChannelDialog({ onClose }: { onClose: () => void }) {
   };
 
   const onSubmit = (data: ChannelFormData) => {
+    const {
+      adminEmail,
+      adminFirstName,
+      adminLastName,
+      adminSendEmail,
+      ...channelFields
+    } = data;
     createMutation.mutate({
-      ...data,
-      logoUrl: data.logoUrl?.trim() || undefined,
-      bannerUrl: data.bannerUrl?.trim() || undefined,
+      ...channelFields,
+      logoUrl: channelFields.logoUrl?.trim() || undefined,
+      bannerUrl: channelFields.bannerUrl?.trim() || undefined,
       allowedAccessTypes: selectedAccessTypes,
+      admin: {
+        email: adminEmail.trim(),
+        firstName: adminFirstName?.trim() || undefined,
+        lastName: adminLastName?.trim() || undefined,
+        sendEmail: adminSendEmail !== false,
+      },
     } as any);
   };
 
@@ -450,6 +512,55 @@ function CreateChannelDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             </div>
+            <div className="space-y-3 rounded-lg border border-surface-800 bg-surface-900/40 p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Channel admin</h3>
+                <p className="mt-0.5 text-xs text-surface-500">
+                  We'll send an invite link so they can set their own password. No
+                  password is ever set by you.
+                </p>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-surface-300">
+                  Admin email
+                </label>
+                <Input
+                  type="email"
+                  placeholder="admin@example.com"
+                  {...register("adminEmail")}
+                />
+                {errors.adminEmail && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors.adminEmail.message}
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-surface-300">
+                    First name (optional)
+                  </label>
+                  <Input {...register("adminFirstName")} placeholder="Jane" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-surface-300">
+                    Last name (optional)
+                  </label>
+                  <Input {...register("adminLastName")} placeholder="Doe" />
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-surface-800 bg-surface-900/50 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-surface-600 bg-surface-900 text-primary-600 focus:ring-primary-500"
+                  defaultChecked
+                  {...register("adminSendEmail")}
+                />
+                <span className="text-sm text-surface-200">
+                  Send invite email
+                </span>
+              </label>
+            </div>
             {createMutation.isError && (
               <p className="text-sm text-destructive" role="alert">
                 {createChannelErrorMessage(createMutation.error)}
@@ -464,6 +575,84 @@ function CreateChannelDialog({ onClose }: { onClose: () => void }) {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function InviteLinkDialog({
+  title,
+  subtitle,
+  inviteUrl,
+  onClose,
+}: {
+  title: string;
+  subtitle: string;
+  inviteUrl?: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore clipboard errors */
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <Card className="mx-4 w-full max-w-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-primary-400">
+            <CheckCircle2 className="h-5 w-5" />
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-surface-300">{subtitle}</p>
+          {inviteUrl && (
+            <div className="space-y-2">
+              <label className="block text-xs font-medium uppercase tracking-wide text-surface-500">
+                Invite link
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={inviteUrl}
+                  className="flex h-10 w-full flex-1 rounded-md border border-surface-700 bg-surface-900 px-3 text-sm text-surface-100"
+                  onFocus={(e) => e.target.select()}
+                />
+                <Button type="button" variant="outline" onClick={copy}>
+                  {copied ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-primary-400" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="flex items-start gap-1.5 text-xs text-surface-500">
+                <Mail className="mt-0.5 h-3.5 w-3.5" />
+                Anyone with this link can set the account password. Treat it like
+                a temporary credential.
+              </p>
+            </div>
+          )}
+          <div className="flex justify-end pt-2">
+            <Button onClick={onClose}>Done</Button>
+          </div>
         </CardContent>
       </Card>
     </div>

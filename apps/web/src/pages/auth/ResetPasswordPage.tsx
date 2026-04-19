@@ -45,7 +45,7 @@ export default function ResetPasswordPage() {
 
   const mutation = useMutation({
     mutationFn: (password: string) =>
-      authApi.resetPassword({ token: token!, password }),
+      authApi.resetPassword({ token: token!, newPassword: password }),
     onSuccess: () => setSuccess(true),
   });
 

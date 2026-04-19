@@ -37,6 +37,9 @@ const ForgotPasswordPage = lazy(
 const ResetPasswordPage = lazy(
   () => import("@/pages/auth/ResetPasswordPage"),
 );
+const AcceptInvitePage = lazy(
+  () => import("@/pages/auth/AcceptInvitePage"),
+);
 const VerifyEmailPage = lazy(() => import("@/pages/auth/VerifyEmailPage"));
 
 // ── Authenticated app pages ────────────────────────────────────────
@@ -44,6 +47,7 @@ const VerifyEmailPage = lazy(() => import("@/pages/auth/VerifyEmailPage"));
 const WatchPage = lazy(() => import("@/pages/app/WatchPage"));
 const MyLibraryPage = lazy(() => import("@/pages/app/MyLibraryPage"));
 const AccountPage = lazy(() => import("@/pages/app/AccountPage"));
+const SecurityPage = lazy(() => import("@/pages/app/SecurityPage"));
 const SubscriptionsPage = lazy(
   () => import("@/pages/app/SubscriptionsPage"),
 );
@@ -132,6 +136,7 @@ const AdminAdCampaigns = lazy(
   () => import("@/pages/admin/AdCampaignsPage"),
 );
 const AdminAdvertisers = lazy(() => import("@/pages/admin/AdvertisersPage"));
+const AdminUsers = lazy(() => import("@/pages/admin/UsersPage"));
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -176,6 +181,10 @@ export function App() {
                   path="reset-password"
                   element={<ResetPasswordPage />}
                 />
+                <Route
+                  path="accept-invite"
+                  element={<AcceptInvitePage />}
+                />
                 <Route path="verify-email" element={<VerifyEmailPage />} />
               </Route>
 
@@ -200,6 +209,10 @@ export function App() {
                     element={<WatchHistoryPage />}
                   />
                   <Route path="account/devices" element={<DevicesPage />} />
+                  <Route
+                    path="account/security"
+                    element={<SecurityPage />}
+                  />
                   <Route
                     path="checkout/success"
                     element={<CheckoutSuccessPage />}
@@ -246,6 +259,7 @@ export function App() {
                     element={<AdminAdCampaigns />}
                   />
                   <Route path="advertisers" element={<AdminAdvertisers />} />
+                  <Route path="users" element={<AdminUsers />} />
                 </Route>
               </Route>
 

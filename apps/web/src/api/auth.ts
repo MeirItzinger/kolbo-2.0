@@ -57,9 +57,39 @@ export async function forgotPassword(email: string): Promise<void> {
 
 export async function resetPassword(payload: {
   token: string;
-  password: string;
+  newPassword: string;
 }): Promise<void> {
   await api.post("/auth/reset-password", payload);
+}
+
+export async function changePassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<void> {
+  await api.post("/auth/change-password", payload);
+}
+
+export interface InvitePreview {
+  email: string;
+  firstName: string;
+  lastName: string;
+  contextLabel?: string;
+  expiresAt: string;
+}
+
+export async function getInvite(token: string): Promise<InvitePreview> {
+  const { data } = await api.get(`/auth/invite/${encodeURIComponent(token)}`);
+  return data.data ?? data;
+}
+
+export async function acceptInvite(payload: {
+  token: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+}): Promise<LoginResponse> {
+  const { data } = await api.post("/auth/accept-invite", payload);
+  return data.data ?? data;
 }
 
 export async function getMe(): Promise<User> {

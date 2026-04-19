@@ -7,6 +7,7 @@ import {
   History,
   Monitor,
   ShoppingBag,
+  Shield,
   ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -46,6 +47,12 @@ const quickLinks = [
     icon: Monitor,
     label: "Devices",
     description: "Manage your registered devices",
+  },
+  {
+    to: "/account/security",
+    icon: Shield,
+    label: "Security",
+    description: "Change your password",
   },
 ] as const;
 

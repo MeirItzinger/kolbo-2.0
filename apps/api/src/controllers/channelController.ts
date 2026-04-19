@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { hashSync } from "bcryptjs";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/apiError";
 import { prisma } from "../lib/prisma";
+import * as authService from "../services/auth/authService";
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const { page = "1", limit = "20", active } = req.query;
@@ -60,11 +60,36 @@ export const getByIdOrSlug = asyncHandler(
 );
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { slug, name, description, shortDescription, logoUrl, bannerUrl, defaultCurrency, allowedAccessTypes } =
-    req.body;
+  const {
+    slug,
+    name,
+    description,
+    shortDescription,
+    logoUrl,
+    bannerUrl,
+    defaultCurrency,
+    allowedAccessTypes,
+    admin,
+  } = req.body;
 
   const existing = await prisma.channel.findUnique({ where: { slug } });
   if (existing) throw ApiError.conflict("A channel with this slug already exists");
+
+  if (!admin || typeof admin.email !== "string" || !admin.email.trim()) {
+    throw ApiError.badRequest("admin.email is required to provision a channel admin");
+  }
+
+  const adminEmail = admin.email.toLowerCase().trim();
+  const adminFirstName = (admin.firstName ?? "").toString().trim() || name;
+  const adminLastName = (admin.lastName ?? "").toString().trim() || "Admin";
+  const sendEmail = admin.sendEmail !== false;
+
+  const channelAdminRole = await prisma.role.findUnique({
+    where: { key: "CHANNEL_ADMIN" },
+  });
+  if (!channelAdminRole) {
+    throw ApiError.internal("CHANNEL_ADMIN role is not configured");
+  }
 
   const channel = await prisma.channel.create({
     data: {
@@ -79,44 +104,88 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     },
   });
 
-  const adminEmail = `admin@${slug.replace(/\s+/g, "").toLowerCase()}.com`;
-  const adminPassword = name.replace(/\s+/g, "").toLowerCase() + "yechi";
-
-  const channelAdminRole = await prisma.role.findUnique({
-    where: { key: "CHANNEL_ADMIN" },
-  });
-
-  if (channelAdminRole) {
-    const existingUser = await prisma.user.findUnique({ where: { email: adminEmail } });
-
-    const adminUser = existingUser ?? await prisma.user.create({
-      data: {
-        email: adminEmail,
-        passwordHash: hashSync(adminPassword, 12),
-        firstName: name,
-        lastName: "Admin",
-        emailVerifiedAt: new Date(),
-        isActive: true,
-      },
+  const adminUser = await prisma.$transaction(async (tx) => {
+    const existingUser = await tx.user.findUnique({
+      where: { email: adminEmail },
     });
 
-    await prisma.userRole.create({
-      data: {
-        userId: adminUser.id,
+    const user =
+      existingUser ??
+      (await tx.user.create({
+        data: {
+          email: adminEmail,
+          passwordHash: null,
+          firstName: adminFirstName,
+          lastName: adminLastName,
+          emailVerifiedAt: null,
+          isActive: true,
+        },
+      }));
+
+    const existingRole = await tx.userRole.findFirst({
+      where: {
+        userId: user.id,
         roleId: channelAdminRole.id,
         channelId: channel.id,
       },
     });
+    if (!existingRole) {
+      await tx.userRole.create({
+        data: {
+          userId: user.id,
+          roleId: channelAdminRole.id,
+          channelId: channel.id,
+        },
+      });
+    }
 
-    await prisma.channelAdmin.create({
-      data: {
-        channelId: channel.id,
-        userId: adminUser.id,
-      },
+    const existingChannelAdmin = await tx.channelAdmin.findUnique({
+      where: { channelId_userId: { channelId: channel.id, userId: user.id } },
     });
+    if (!existingChannelAdmin) {
+      await tx.channelAdmin.create({
+        data: { channelId: channel.id, userId: user.id },
+      });
+    }
+
+    return user;
+  });
+
+  // Only invite if the user has not already set a password (i.e. brand-new account
+  // or one that was provisioned but never accepted). Existing real users keep their pw.
+  let inviteUrl: string | undefined;
+  let emailed = false;
+  if (!adminUser.passwordHash) {
+    const result = await authService.sendInviteToUser({
+      userId: adminUser.id,
+      context: {
+        kind: "channel-admin",
+        channelId: channel.id,
+        channelName: channel.name,
+      },
+      createdById: req.user?.id,
+      inviterName: req.user?.email,
+      sendEmail,
+    });
+    inviteUrl = result.inviteUrl;
+    emailed = result.emailed;
   }
 
-  res.status(201).json({ status: "success", data: channel });
+  res.status(201).json({
+    status: "success",
+    data: {
+      ...channel,
+      admin: {
+        id: adminUser.id,
+        email: adminUser.email,
+        firstName: adminUser.firstName,
+        lastName: adminUser.lastName,
+        inviteUrl,
+        invitedByEmail: emailed,
+        alreadyHadAccount: !!adminUser.passwordHash,
+      },
+    },
+  });
 });
 
 export const update = asyncHandler(async (req: Request, res: Response) => {

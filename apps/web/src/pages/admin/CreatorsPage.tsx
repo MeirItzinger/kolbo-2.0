@@ -12,7 +12,10 @@ import {
   adminListChannels,
   adminGetChannel,
   adminCreateConnectOnboardingLink,
+  type AdminProvisionInfo,
+  type CreatorWithAdmin,
 } from "@/api/admin";
+import { InviteLinkDialog } from "./ChannelsPage";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -27,7 +30,7 @@ import {
 import { slugify } from "@/lib/utils";
 import type { CreatorProfile } from "@/types";
 
-const creatorSchema = z.object({
+const creatorBaseSchema = z.object({
   channelId: z.string().optional(),
   displayName: z.string().min(1, "Name is required"),
   slug: z.string().min(1, "Slug is required"),
@@ -36,7 +39,21 @@ const creatorSchema = z.object({
   revSharePercent: z.coerce.number().min(0).max(100).optional().or(z.literal("")),
 });
 
-type CreatorFormData = z.infer<typeof creatorSchema>;
+const creatorCreateSchema = creatorBaseSchema.extend({
+  adminEmail: z.string().email("Valid email required"),
+  adminFirstName: z.string().optional(),
+  adminLastName: z.string().optional(),
+  adminSendEmail: z.boolean().optional(),
+});
+
+const creatorEditSchema = creatorBaseSchema.extend({
+  adminEmail: z.string().optional(),
+  adminFirstName: z.string().optional(),
+  adminLastName: z.string().optional(),
+  adminSendEmail: z.boolean().optional(),
+});
+
+type CreatorFormData = z.infer<typeof creatorCreateSchema>;
 
 export default function AdminCreatorsPage() {
   const { user, hasRole } = useAuth();
@@ -50,6 +67,10 @@ export default function AdminCreatorsPage() {
   const [editing, setEditing] = useState<CreatorProfile | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CreatorProfile | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [provisioned, setProvisioned] = useState<{
+    creatorName: string;
+    admin: AdminProvisionInfo;
+  } | null>(null);
 
   async function handleConnectStripe(creatorId: string) {
     setConnectingId(creatorId);
@@ -187,6 +208,31 @@ export default function AdminCreatorsPage() {
           lockedChannelId={channelAdminChannelId || undefined}
           channelName={channelDetailQuery.data?.name}
           onClose={() => { setShowForm(false); setEditing(null); }}
+          onCreated={(creator) => {
+            setShowForm(false);
+            setEditing(null);
+            if (creator.admin) {
+              setProvisioned({
+                creatorName: creator.displayName,
+                admin: creator.admin,
+              });
+            }
+          }}
+        />
+      )}
+
+      {provisioned && (
+        <InviteLinkDialog
+          title={`${provisioned.creatorName} created`}
+          subtitle={
+            provisioned.admin.alreadyHadAccount
+              ? `${provisioned.admin.email} already has a Kolbo account, so no invite was needed. They are now a creator admin.`
+              : provisioned.admin.invitedByEmail
+                ? `An invite email has been sent to ${provisioned.admin.email}. You can also share the link below.`
+                : `Share this invite link with ${provisioned.admin.email}. The link is valid for 7 days.`
+          }
+          inviteUrl={provisioned.admin.inviteUrl}
+          onClose={() => setProvisioned(null)}
         />
       )}
 
@@ -222,18 +268,20 @@ function CreatorFormDialog({
   lockedChannelId,
   channelName,
   onClose,
+  onCreated,
 }: {
   channels: { id: string; name: string }[];
   creator: CreatorProfile | null;
   lockedChannelId?: string;
   channelName?: string;
   onClose: () => void;
+  onCreated: (creator: CreatorWithAdmin) => void;
 }) {
   const qc = useQueryClient();
   const isEdit = !!creator;
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<CreatorFormData>({
-    resolver: zodResolver(creatorSchema),
+    resolver: zodResolver(isEdit ? creatorEditSchema : creatorCreateSchema),
     defaultValues: creator
       ? {
           channelId: (creator as any).channelCreators?.[0]?.channelId ?? "",
@@ -242,20 +290,32 @@ function CreatorFormDialog({
           bio: creator.bio ?? "",
           avatarUrl: (creator as any).avatarUrl ?? "",
           revSharePercent: (creator as any).revSharePercent ?? "",
+          adminEmail: "",
+          adminFirstName: "",
+          adminLastName: "",
+          adminSendEmail: true,
         }
       : {
           channelId: lockedChannelId ?? "",
+          adminEmail: "",
+          adminFirstName: "",
+          adminLastName: "",
+          adminSendEmail: true,
         },
   });
 
   const createMutation = useMutation({
     mutationFn: adminCreateCreator,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "creators"] }); onClose(); },
+    onSuccess: (creator) => {
+      qc.invalidateQueries({ queryKey: ["admin", "creators"] });
+      onCreated(creator);
+    },
     onError: (err: any) => alert(err?.response?.data?.message ?? "Failed to create creator"),
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: CreatorFormData) => adminUpdateCreator(creator!.id, data),
+    mutationFn: (data: Omit<CreatorFormData, "adminEmail" | "adminFirstName" | "adminLastName" | "adminSendEmail">) =>
+      adminUpdateCreator(creator!.id, data as any),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "creators"] }); onClose(); },
     onError: (err: any) => alert(err?.response?.data?.message ?? "Failed to update creator"),
   });
@@ -263,13 +323,26 @@ function CreatorFormDialog({
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   const onSubmit = (data: CreatorFormData) => {
-    if (isEdit) updateMutation.mutate(data);
-    else createMutation.mutate(data);
+    if (isEdit) {
+      const { adminEmail, adminFirstName, adminLastName, adminSendEmail, ...rest } = data;
+      updateMutation.mutate(rest);
+    } else {
+      const { adminEmail, adminFirstName, adminLastName, adminSendEmail, ...rest } = data;
+      createMutation.mutate({
+        ...rest,
+        admin: {
+          email: adminEmail.trim(),
+          firstName: adminFirstName?.trim() || undefined,
+          lastName: adminLastName?.trim() || undefined,
+          sendEmail: adminSendEmail !== false,
+        },
+      } as any);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <Card className="mx-4 w-full max-w-lg">
+      <Card className="mx-4 w-full max-w-lg max-h-[85vh] overflow-y-auto">
         <CardHeader>
           <CardTitle>{isEdit ? "Edit" : "Create"} Creator</CardTitle>
         </CardHeader>
@@ -339,6 +412,54 @@ function CreatorFormDialog({
               />
               {errors.revSharePercent && <p className="mt-1 text-xs text-destructive">{errors.revSharePercent.message}</p>}
             </div>
+            {!isEdit && (
+              <div className="space-y-3 rounded-lg border border-surface-800 bg-surface-900/40 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Creator admin</h3>
+                  <p className="mt-0.5 text-xs text-surface-500">
+                    We'll send an invite link so they can set their own password.
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-surface-300">
+                    Admin email
+                  </label>
+                  <Input
+                    type="email"
+                    placeholder="creator@example.com"
+                    {...register("adminEmail")}
+                  />
+                  {errors.adminEmail && (
+                    <p className="mt-1 text-xs text-destructive">
+                      {errors.adminEmail.message}
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-surface-300">
+                      First name (optional)
+                    </label>
+                    <Input {...register("adminFirstName")} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-surface-300">
+                      Last name (optional)
+                    </label>
+                    <Input {...register("adminLastName")} />
+                  </div>
+                </div>
+                <label className="flex cursor-pointer items-center gap-3 rounded-md border border-surface-800 bg-surface-900/50 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-surface-600 bg-surface-900 text-primary-600 focus:ring-primary-500"
+                    defaultChecked
+                    {...register("adminSendEmail")}
+                  />
+                  <span className="text-sm text-surface-200">Send invite email</span>
+                </label>
+              </div>
+            )}
             <div className="flex justify-end gap-3 pt-2">
               <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
               <Button type="submit" disabled={isPending}>

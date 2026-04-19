@@ -4,7 +4,7 @@ import { ApiError } from "../utils/apiError";
 import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
 import { env } from "../config/env";
-import bcrypt from "bcryptjs";
+import * as authService from "../services/auth/authService";
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const { page = "1", limit = "20", channelId, active } = req.query;
@@ -66,25 +66,52 @@ export const getByIdOrSlug = asyncHandler(
 );
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { slug, displayName, bio, avatarUrl, channelId, revSharePercent } = req.body;
+  const {
+    slug,
+    displayName,
+    bio,
+    avatarUrl,
+    channelId,
+    revSharePercent,
+    admin,
+  } = req.body;
 
   const existing = await prisma.creatorProfile.findUnique({ where: { slug } });
   if (existing) throw ApiError.conflict("A creator with this slug already exists");
 
-  // Derive login credentials from displayName
-  const nameParts = displayName.trim().split(/\s+/);
-  const firstName = nameParts[0] ?? displayName;
-  const lastName = nameParts.slice(1).join("") || "";
-  const nameSlug = displayName.toLowerCase().replace(/\s+/g, "");
-  const loginEmail = `${nameSlug}@kolbo.com`;
-  const loginPassword = `${nameSlug}yechi`;
-  const passwordHash = await bcrypt.hash(loginPassword, 10);
+  if (!admin || typeof admin.email !== "string" || !admin.email.trim()) {
+    throw ApiError.badRequest("admin.email is required to provision a creator admin");
+  }
 
-  const creatorAdminRole = await prisma.role.findUnique({ where: { key: "CREATOR_ADMIN" } });
+  // CHANNEL_ADMIN callers can only create creators within their own channel.
+  const isSuperAdmin = req.user?.roles.some((r) => r.key === "SUPER_ADMIN");
+  if (!isSuperAdmin) {
+    if (!channelId) {
+      throw ApiError.badRequest("channelId is required");
+    }
+    const ok = req.user?.roles.some(
+      (r) => r.key === "CHANNEL_ADMIN" && r.channelId === channelId
+    );
+    if (!ok) {
+      throw ApiError.forbidden("You do not have admin access to this channel");
+    }
+  }
+
+  const nameParts = displayName.trim().split(/\s+/);
+  const fallbackFirstName = nameParts[0] ?? displayName;
+  const fallbackLastName = nameParts.slice(1).join(" ") || "";
+  const adminEmail = admin.email.toLowerCase().trim();
+  const adminFirstName = (admin.firstName ?? "").toString().trim() || fallbackFirstName;
+  const adminLastName = (admin.lastName ?? "").toString().trim() || fallbackLastName;
+  const sendEmail = admin.sendEmail !== false;
+
+  const creatorAdminRole = await prisma.role.findUnique({
+    where: { key: "CREATOR_ADMIN" },
+  });
   if (!creatorAdminRole) throw ApiError.notFound("CREATOR_ADMIN role not found");
 
-  const creator = await prisma.$transaction(async (tx) => {
-    const profile = await tx.creatorProfile.create({
+  const { profile, user } = await prisma.$transaction(async (tx) => {
+    const createdProfile = await tx.creatorProfile.create({
       data: {
         slug,
         displayName,
@@ -100,41 +127,83 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
       await tx.channelCreator.create({
         data: {
           channelId,
-          creatorProfileId: profile.id,
+          creatorProfileId: createdProfile.id,
           status: "APPROVED",
           approvedAt: new Date(),
         },
       });
     }
 
-    // Create or reuse user account
-    let user = await tx.user.findUnique({ where: { email: loginEmail } });
-    if (!user) {
-      user = await tx.user.create({
+    const existingUser = await tx.user.findUnique({
+      where: { email: adminEmail },
+    });
+
+    const adminUser =
+      existingUser ??
+      (await tx.user.create({
         data: {
-          email: loginEmail,
-          passwordHash,
-          firstName,
-          lastName,
-          emailVerifiedAt: new Date(),
+          email: adminEmail,
+          passwordHash: null,
+          firstName: adminFirstName,
+          lastName: adminLastName,
+          emailVerifiedAt: null,
           isActive: true,
+        },
+      }));
+
+    const existingRole = await tx.userRole.findFirst({
+      where: {
+        userId: adminUser.id,
+        roleId: creatorAdminRole.id,
+        creatorProfileId: createdProfile.id,
+      },
+    });
+    if (!existingRole) {
+      await tx.userRole.create({
+        data: {
+          userId: adminUser.id,
+          roleId: creatorAdminRole.id,
+          creatorProfileId: createdProfile.id,
         },
       });
     }
 
-    // Assign CREATOR_ADMIN role linked to this profile
-    await tx.userRole.create({
-      data: {
-        userId: user.id,
-        roleId: creatorAdminRole.id,
-        creatorProfileId: profile.id,
-      },
-    });
-
-    return { ...profile, loginEmail, loginPassword };
+    return { profile: createdProfile, user: adminUser };
   });
 
-  res.status(201).json({ status: "success", data: creator });
+  let inviteUrl: string | undefined;
+  let emailed = false;
+  if (!user.passwordHash) {
+    const result = await authService.sendInviteToUser({
+      userId: user.id,
+      context: {
+        kind: "creator-admin",
+        creatorProfileId: profile.id,
+        creatorName: profile.displayName,
+      },
+      createdById: req.user?.id,
+      inviterName: req.user?.email,
+      sendEmail,
+    });
+    inviteUrl = result.inviteUrl;
+    emailed = result.emailed;
+  }
+
+  res.status(201).json({
+    status: "success",
+    data: {
+      ...profile,
+      admin: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        inviteUrl,
+        invitedByEmail: emailed,
+        alreadyHadAccount: !!user.passwordHash,
+      },
+    },
+  });
 });
 
 export const update = asyncHandler(async (req: Request, res: Response) => {

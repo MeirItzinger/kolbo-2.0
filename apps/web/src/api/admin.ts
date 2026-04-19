@@ -33,9 +33,28 @@ export async function adminGetChannel(id: string): Promise<Channel> {
   return unwrap(data);
 }
 
+export interface AdminProvisionInfo {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  inviteUrl?: string;
+  invitedByEmail: boolean;
+  alreadyHadAccount: boolean;
+}
+
+export type ChannelWithAdmin = Channel & { admin?: AdminProvisionInfo };
+
 export async function adminCreateChannel(
-  payload: Partial<Channel>,
-): Promise<Channel> {
+  payload: Partial<Channel> & {
+    admin: {
+      email: string;
+      firstName?: string;
+      lastName?: string;
+      sendEmail?: boolean;
+    };
+  },
+): Promise<ChannelWithAdmin> {
   const { data } = await api.post("/channels", payload);
   return unwrap(data);
 }
@@ -63,9 +82,18 @@ export async function adminListCreators(params?: {
   return data;
 }
 
+export type CreatorWithAdmin = CreatorProfile & { admin?: AdminProvisionInfo };
+
 export async function adminCreateCreator(
-  payload: Partial<CreatorProfile>,
-): Promise<CreatorProfile> {
+  payload: Partial<CreatorProfile> & {
+    admin: {
+      email: string;
+      firstName?: string;
+      lastName?: string;
+      sendEmail?: boolean;
+    };
+  },
+): Promise<CreatorWithAdmin> {
   const { data } = await api.post("/creators", payload);
   return unwrap(data);
 }
