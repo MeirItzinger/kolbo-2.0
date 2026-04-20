@@ -143,7 +143,7 @@ export default function AdminLayout() {
   return (
     <div className="admin-theme flex min-h-screen bg-surface-950">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 border-r border-surface-800 bg-surface-900 lg:block">
+      <aside className="admin-sidebar hidden w-64 shrink-0 border-r border-surface-800 bg-surface-900 lg:block">
         <div className="sticky top-0 h-screen">
           <SidebarContent />
         </div>
@@ -156,7 +156,7 @@ export default function AdminLayout() {
             className="absolute inset-0 bg-black/60"
             onClick={() => setSidebarOpen(false)}
           />
-          <aside className="relative h-full w-64 bg-surface-900">
+          <aside className="admin-sidebar relative h-full w-64 bg-surface-900">
             <button
               type="button"
               onClick={() => setSidebarOpen(false)}
