@@ -1,3 +1,4 @@
+import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
 import { env } from "../../config/env";
 
 // ─── Types ──────────────────────────────────────────────
@@ -33,15 +34,70 @@ export interface UscreenValidationResult {
   valid: boolean;
   userId?: string;
   email?: string;
+  /** Channel slug the viewer is entitled to when session was minted by Kolbo. */
+  channelSlug?: string;
 }
 
 export interface UscreenLoginResult {
   success: boolean;
-  accessToken?: string;
+  /** Kolbo-minted session token (JWT) — what the client should send back as X-Uscreen-Access-Token. */
+  sessionToken?: string;
+  /** Raw Uscreen access_token, kept for completeness (not exposed to the browser). */
+  uscreenAccessToken?: string;
   refreshToken?: string;
   exp?: number;
   user?: UscreenUserPayload;
   error?: string;
+}
+
+// ─── Kolbo-signed Uscreen session token ─────────────────
+//
+// We used to validate every request by calling Uscreen's `/users/me` with the
+// customer's session `access_token`. That endpoint does not exist on the v2
+// admin API hosted at api.uscreen.io/api/v2 (the `/users/*` routes there are
+// admin-keyed, not customer-session-keyed), so revalidation always failed and
+// playback was silently denied. Instead, we now mint a short-lived Kolbo JWT
+// at login time and trust our own signature on subsequent requests.
+
+const USCREEN_SESSION_TOKEN_KIND = "uscreen-session";
+const USCREEN_SESSION_TTL = "30d";
+
+interface UscreenSessionJwtPayload extends JwtPayload {
+  kind: typeof USCREEN_SESSION_TOKEN_KIND;
+  /** Stringified Uscreen user id. */
+  uid: string;
+  email?: string;
+  /** Channel slug this session is entitled to (currently always "toveedo"). */
+  channelSlug: string;
+}
+
+export function createUscreenSessionToken(payload: {
+  uscreenUserId: string | number;
+  email?: string;
+  channelSlug: string;
+}): string {
+  const body: Omit<UscreenSessionJwtPayload, "iat" | "exp"> = {
+    kind: USCREEN_SESSION_TOKEN_KIND,
+    uid: String(payload.uscreenUserId),
+    email: payload.email,
+    channelSlug: payload.channelSlug,
+  };
+  const options: SignOptions = { expiresIn: USCREEN_SESSION_TTL };
+  return jwt.sign(body, env.JWT_ACCESS_SECRET, options);
+}
+
+function verifyUscreenSessionToken(
+  token: string
+): UscreenSessionJwtPayload | null {
+  try {
+    const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload & {
+      kind?: string;
+    };
+    if (decoded?.kind !== USCREEN_SESSION_TOKEN_KIND) return null;
+    return decoded as UscreenSessionJwtPayload;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────
@@ -56,15 +112,23 @@ function storeTokenHeader(): Record<string, string> {
 }
 
 const CACHE_TTL_MS = 60_000;
-const validationCache = new Map<string, { expiresAt: number; value: UscreenValidationResult }>();
+const validationCache = new Map<
+  string,
+  { expiresAt: number; value: UscreenValidationResult }
+>();
 
 function parseUser(response: UscreenMeResponse): UscreenUserPayload | null {
   if (response.user) return response.user;
-  if ((response as unknown as { data?: { user?: UscreenUserPayload } }).data?.user) {
-    return (response as unknown as { data: { user: UscreenUserPayload } }).data.user;
+  if (
+    (response as unknown as { data?: { user?: UscreenUserPayload } }).data
+      ?.user
+  ) {
+    return (response as unknown as { data: { user: UscreenUserPayload } }).data
+      .user;
   }
   if (response.dataUser) return response.dataUser;
-  if (response.data && (response.data.id !== undefined || response.data.email)) return response.data;
+  if (response.data && (response.data.id !== undefined || response.data.email))
+    return response.data;
   if (response.id !== undefined || response.email) {
     return { id: response.id, email: response.email };
   }
@@ -93,10 +157,15 @@ function cacheSet(token: string, value: UscreenValidationResult): void {
 /**
  * Authenticate a user against the Uscreen API using email + password.
  * Mirrors the toveedo tablet app: `POST /sessions` with `X-Store-Token`.
+ *
+ * On success we mint a Kolbo-signed session JWT for the browser to use.
+ * The Uscreen `access_token` itself is not exposed to the client; we keep it
+ * for potential future server-side Uscreen API calls.
  */
 export async function loginViaUscreen(
   email: string,
-  password: string
+  password: string,
+  channelSlug = "toveedo"
 ): Promise<UscreenLoginResult> {
   const url = `${uscreenBaseUrl()}/sessions`;
 
@@ -122,9 +191,17 @@ export async function loginViaUscreen(
       return { success: false, error: "Unexpected Uscreen response" };
     }
 
+    const uscreenUserId = body.user?.id ?? "unknown";
+    const sessionToken = createUscreenSessionToken({
+      uscreenUserId,
+      email: body.user?.email ?? email,
+      channelSlug,
+    });
+
     return {
       success: true,
-      accessToken: body.auth.access_token,
+      sessionToken,
+      uscreenAccessToken: body.auth.access_token,
       refreshToken: body.auth.refresh_token,
       exp: body.auth.exp,
       user: body.user,
@@ -138,8 +215,18 @@ export async function loginViaUscreen(
 // ─── Validate existing token ────────────────────────────
 
 /**
- * Validate an end-user Uscreen access token by querying `/users/me`.
- * Returns `valid: true` for any successful user payload.
+ * Validate an incoming `X-Uscreen-Access-Token` header.
+ *
+ * 1. Preferred path: the token is a Kolbo-minted `uscreen-session` JWT.
+ *    We verify our own signature and return `valid: true` immediately —
+ *    no external network call needed. This is what the webapp sends after
+ *    a successful Toveedo login.
+ *
+ * 2. Fallback path (kept for compatibility / future native Uscreen
+ *    integrations that might post a raw Uscreen access_token): call the
+ *    configured `USCREEN_ME_PATH` on the Uscreen API with Bearer auth.
+ *    If it returns 2xx, accept the token. Failures are logged so we don't
+ *    silently deny playback any more.
  */
 export async function validateUscreenAccessToken(
   accessToken: string
@@ -147,6 +234,18 @@ export async function validateUscreenAccessToken(
   const token = accessToken.trim();
   if (!token) return { valid: false };
 
+  // Fast path — Kolbo-signed session token.
+  const kolboSession = verifyUscreenSessionToken(token);
+  if (kolboSession) {
+    return {
+      valid: true,
+      userId: kolboSession.uid,
+      email: kolboSession.email,
+      channelSlug: kolboSession.channelSlug,
+    };
+  }
+
+  // Fallback path — raw Uscreen access_token (legacy / future use).
   const cached = cacheGet(token);
   if (cached) return cached;
 
@@ -166,6 +265,10 @@ export async function validateUscreenAccessToken(
     });
 
     if (!resp.ok) {
+      const bodyText = await resp.text().catch(() => "");
+      console.warn(
+        `[uscreen] /users/me validation failed: status=${resp.status} url=${url} body=${bodyText.slice(0, 200)}`
+      );
       const invalid = { valid: false };
       cacheSet(token, invalid);
       return invalid;

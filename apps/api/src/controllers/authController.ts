@@ -37,9 +37,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 export const loginToveedo = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
-  const uscreen = await loginViaUscreen(email, password);
+  const uscreen = await loginViaUscreen(email, password, "toveedo");
 
-  if (!uscreen.success || !uscreen.accessToken) {
+  if (!uscreen.success || !uscreen.sessionToken) {
     throw ApiError.unauthorized("Invalid Toveedo credentials");
   }
 
@@ -49,7 +49,10 @@ export const loginToveedo = asyncHandler(async (req: Request, res: Response) => 
       accessToken: null,
       refreshToken: null,
       sessionId: null,
-      uscreenAccessToken: uscreen.accessToken,
+      // Kolbo-signed JWT. Client stores this as `kolbo_uscreen_access_token`
+      // and sends it back as the `X-Uscreen-Access-Token` header on every
+      // subsequent request. Backend verifies it locally (no Uscreen round-trip).
+      uscreenAccessToken: uscreen.sessionToken,
       channelSlug: "toveedo",
       user: {
         id: `uscreen_${uscreen.user?.id ?? "unknown"}`,

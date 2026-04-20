@@ -40,6 +40,37 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const AUTH_QUERY_KEY = ["auth", "me"];
+const USCREEN_USER_KEY = "kolbo_uscreen_user";
+
+function readStoredUscreenUser(): User | null {
+  // Prefer localStorage so the Toveedo session survives tab close/reopen,
+  // but fall back to sessionStorage for users who logged in before this change.
+  const raw =
+    (typeof localStorage !== "undefined"
+      ? localStorage.getItem(USCREEN_USER_KEY)
+      : null) ??
+    (typeof sessionStorage !== "undefined"
+      ? sessionStorage.getItem(USCREEN_USER_KEY)
+      : null);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as User;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredUscreenUser(user: unknown): void {
+  const serialized = JSON.stringify(user);
+  localStorage.setItem(USCREEN_USER_KEY, serialized);
+  // Clear any legacy sessionStorage copy so we don't diverge.
+  sessionStorage.removeItem(USCREEN_USER_KEY);
+}
+
+function clearStoredUscreenUser(): void {
+  localStorage.removeItem(USCREEN_USER_KEY);
+  sessionStorage.removeItem(USCREEN_USER_KEY);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
@@ -51,16 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryKey: AUTH_QUERY_KEY,
     queryFn: async () => {
       if (!getAccessToken()) {
-        // Uscreen-only session: user object lives in sessionStorage
-        const uscreenUser = sessionStorage.getItem("kolbo_uscreen_user");
-        if (uscreenUser && getUscreenAccessToken()) {
-          try {
-            return JSON.parse(uscreenUser) as User;
-          } catch {
-            return null;
-          }
+        // Uscreen-only session: user object lives in localStorage alongside
+        // the Uscreen access token so the session survives full page reloads.
+        if (!getUscreenAccessToken()) {
+          clearStoredUscreenUser();
+          return null;
         }
-        return null;
+        return readStoredUscreenUser();
       }
       try {
         return await authApi.getMe();
@@ -90,9 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearTokens();
         setUscreenAccessToken(res.uscreenAccessToken);
         const userWithChannel = { ...res.user, channelSlug: res.channelSlug ?? "toveedo" };
-        sessionStorage.setItem("kolbo_uscreen_user", JSON.stringify(userWithChannel));
+        writeStoredUscreenUser(userWithChannel);
+        qc.setQueryData(AUTH_QUERY_KEY, userWithChannel);
+      } else {
+        qc.setQueryData(AUTH_QUERY_KEY, res.user);
       }
-      qc.setQueryData(AUTH_QUERY_KEY, res.user);
     },
   });
 
@@ -113,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSettled: () => {
       clearTokens();
       clearUscreenAccessToken();
-      sessionStorage.removeItem("kolbo_uscreen_user");
+      clearStoredUscreenUser();
       qc.setQueryData(AUTH_QUERY_KEY, null);
       qc.clear();
     },
