@@ -14,7 +14,7 @@ export default function AuthLayout() {
         </Link>
       </div>
 
-      <div className="w-full max-w-md">
+      <div className="flex w-full justify-center">
         <Outlet />
       </div>
 

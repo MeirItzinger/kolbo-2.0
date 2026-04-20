@@ -51,7 +51,7 @@ export default function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="pt-8 pb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/20">
             <AlertTriangle className="h-6 w-6 text-destructive" />
@@ -72,7 +72,7 @@ export default function ResetPasswordPage() {
 
   if (success) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="pt-8 pb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary-600/20">
             <CheckCircle className="h-6 w-6 text-primary-400" />
@@ -92,7 +92,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <Card className="border-surface-800">
+    <Card className="w-full max-w-md border-surface-800">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">Set new password</CardTitle>
         <CardDescription className="text-surface-400">

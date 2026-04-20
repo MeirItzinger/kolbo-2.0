@@ -141,7 +141,7 @@ export default function AdminLayout() {
   );
 
   return (
-    <div className="flex min-h-screen bg-surface-950">
+    <div className="admin-theme flex min-h-screen bg-surface-950">
       {/* Desktop sidebar */}
       <aside className="hidden w-64 shrink-0 border-r border-surface-800 bg-surface-900 lg:block">
         <div className="sticky top-0 h-screen">

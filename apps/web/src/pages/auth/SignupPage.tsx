@@ -192,9 +192,10 @@ function StepIndicator({ current }: { current: number }) {
 
 function SignupContent() {
   const { step } = useSignup();
+  const wide = step === 1;
 
   return (
-    <div className="w-full max-w-5xl">
+    <div className={`w-full ${wide ? "max-w-5xl" : "max-w-md"}`}>
       <StepIndicator current={step} />
       {step === 0 && <CreateAccount />}
       {step === 1 && <ChannelSelection />}

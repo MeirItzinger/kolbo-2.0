@@ -23,7 +23,7 @@ export default function VerifyEmailPage() {
 
   if (!token) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="pt-8 pb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/20">
             <AlertTriangle className="h-6 w-6 text-destructive" />
@@ -44,7 +44,7 @@ export default function VerifyEmailPage() {
 
   if (mutation.isPending) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="flex flex-col items-center pt-8 pb-8">
           <Loader2 className="mb-4 h-10 w-10 animate-spin text-primary-500" />
           <h2 className="text-lg font-semibold text-white">
@@ -57,7 +57,7 @@ export default function VerifyEmailPage() {
 
   if (mutation.isError) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="pt-8 pb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/20">
             <AlertTriangle className="h-6 w-6 text-destructive" />
@@ -78,7 +78,7 @@ export default function VerifyEmailPage() {
   }
 
   return (
-    <Card className="border-surface-800">
+    <Card className="w-full max-w-md border-surface-800">
       <CardContent className="pt-8 pb-8 text-center">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary-600/20">
           <CheckCircle className="h-6 w-6 text-primary-400" />

@@ -85,7 +85,7 @@ export default function LoginPage() {
   };
 
   return (
-    <Card className="border-surface-800">
+    <Card className="w-full max-w-md border-surface-800">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">
           {mode === "toveedo" ? "Toveedo Login" : "Welcome back"}

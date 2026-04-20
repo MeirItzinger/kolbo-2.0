@@ -104,7 +104,7 @@ export default function AcceptInvitePage() {
 
   if (!token) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="pt-8 pb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/20">
             <AlertTriangle className="h-6 w-6 text-destructive" />
@@ -125,7 +125,7 @@ export default function AcceptInvitePage() {
 
   if (inviteQuery.isLoading) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="flex items-center justify-center py-12">
           <Spinner size="lg" />
         </CardContent>
@@ -135,7 +135,7 @@ export default function AcceptInvitePage() {
 
   if (inviteQuery.isError || !inviteQuery.data) {
     return (
-      <Card className="border-surface-800">
+      <Card className="w-full max-w-md border-surface-800">
         <CardContent className="pt-8 pb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/20">
             <AlertTriangle className="h-6 w-6 text-destructive" />
@@ -158,7 +158,7 @@ export default function AcceptInvitePage() {
   const invite = inviteQuery.data;
 
   return (
-    <Card className="border-surface-800">
+    <Card className="w-full max-w-md border-surface-800">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">Welcome to Kolbo</CardTitle>
         <CardDescription className="text-surface-400">
