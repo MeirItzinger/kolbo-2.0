@@ -78,7 +78,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     // Case 2: Only 1 profile exists -> Auto-select if nothing active
     if (profiles.length === 1 && !storedProfileId) {
-      selectProfile(profiles[0]);
+      if (profiles[0].isLocked) {
+        if (location.pathname !== '/profiles' && !location.pathname.startsWith('/login')) {
+          navigate('/profiles', { replace: true });
+        }
+      } else {
+        selectProfile(profiles[0]);
+      }
       return;
     }
 
@@ -93,7 +99,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         // Invalid profile ID (maybe deleted)
         clearActiveProfile();
         if (location.pathname !== '/profiles' && !location.pathname.startsWith('/login')) {
-          navigate('/profiles');
+          navigate('/profiles', { replace: true });
         }
       }
     } else {
@@ -105,7 +111,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         !location.pathname.startsWith('/login') &&
         !location.pathname.startsWith('/signup')
       ) {
-        navigate('/profiles');
+        navigate('/profiles', { replace: true });
       }
     }
   }, [

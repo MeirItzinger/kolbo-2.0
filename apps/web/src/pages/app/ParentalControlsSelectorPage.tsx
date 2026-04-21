@@ -1,13 +1,37 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { ProfileAvatar } from '@/components/profiles';
+import { VerifyPinDialog } from '@/components/pin/VerifyPinDialog';
 import { getProfiles } from '@/api/profiles';
 
 export default function ParentalControlsSelectorPage() {
   const navigate = useNavigate();
+  const [verifyingProfile, setVerifyingProfile] = useState<any | null>(null);
+
+  const handleProfileClick = (profile: any) => {
+    if (profile.isLocked) {
+      setVerifyingProfile(profile);
+    } else {
+      navigate(`/account/profiles/${profile.id}/controls`);
+    }
+  };
+
+  const handleVerifyPin = async (pin: string) => {
+    if (!verifyingProfile) return false;
+    try {
+      const { verifyProfilePin } = await import('@/api/profiles');
+      await verifyProfilePin(verifyingProfile.id, pin);
+      navigate(`/account/profiles/${verifyingProfile.id}/controls`);
+      setVerifyingProfile(null);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  };
 
   const profilesQuery = useQuery({
     queryKey: ['profiles'],
@@ -51,7 +75,7 @@ export default function ParentalControlsSelectorPage() {
           {profiles.map(profile => (
             <button
               key={profile.id}
-              onClick={() => navigate(`/account/profiles/${profile.id}/controls`)}
+              onClick={() => handleProfileClick(profile)}
               className="group flex flex-col items-center gap-3 rounded-xl border border-surface-800 bg-surface-900 p-6 transition-all hover:border-primary-500/50 hover:bg-surface-850"
             >
               <ProfileAvatar
@@ -69,6 +93,14 @@ export default function ParentalControlsSelectorPage() {
           ))}
         </div>
       )}
+
+      <VerifyPinDialog
+        open={!!verifyingProfile}
+        onOpenChange={(open) => !open && setVerifyingProfile(null)}
+        onVerify={handleVerifyPin}
+        title="Profile Locked"
+        description={`Enter PIN for ${verifyingProfile?.name}`}
+      />
     </div>
   );
 }
