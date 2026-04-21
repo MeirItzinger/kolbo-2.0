@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { queryClient } from "@/lib/queryClient";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ProfileProvider } from "@/hooks/useProfile";
 import { AdvertiserAuthProvider } from "@/hooks/useAdvertiserAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdvertiserRoute } from "@/components/AdvertiserRoute";
@@ -165,7 +166,8 @@ export function App() {
       <BrowserRouter>
         <ScrollToTop />
         <AuthProvider>
-          <AdvertiserAuthProvider>
+          <ProfileProvider>
+            <AdvertiserAuthProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* ── Public ──────────────────────────────── */}
@@ -370,6 +372,7 @@ export function App() {
             </Routes>
           </Suspense>
           </AdvertiserAuthProvider>
+          </ProfileProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

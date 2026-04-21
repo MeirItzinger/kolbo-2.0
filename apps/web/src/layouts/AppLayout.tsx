@@ -13,11 +13,14 @@ import {
   Search,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useProfile } from "@/hooks/useProfile";
 import { Button } from "@/components/ui/Button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
+import { ProfileAvatar } from "@/components/profiles/ProfileAvatar";
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const { activeProfile } = useProfile();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -42,9 +45,11 @@ export default function AppLayout() {
     navigate("/");
   };
 
-  const initials = user
-    ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase()
-    : "U";
+  const initials = activeProfile
+    ? `${activeProfile.name?.[0] ?? ""}`.toUpperCase()
+    : user
+      ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase()
+      : "U";
 
   const accountLinks = [
     { to: "/account", label: "Account", icon: User },
@@ -116,14 +121,22 @@ export default function AppLayout() {
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex items-center gap-2 rounded-full p-1 transition-colors hover:bg-surface-800"
               >
-                <Avatar className="h-8 w-8">
-                  {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
-                  <AvatarFallback className="text-xs">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+                {activeProfile ? (
+                  <ProfileAvatar 
+                    avatarUrl={activeProfile.avatarUrl} 
+                    name={activeProfile.name} 
+                    size="sm" 
+                    className="h-8 w-8"
+                  />
+                ) : (
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                )}
                 <span className="max-w-[120px] truncate text-sm font-medium text-surface-200">
-                  {user?.firstName}
+                  {activeProfile?.name || user?.firstName}
                 </span>
                 <ChevronDown className="h-4 w-4 text-surface-400" />
               </button>
@@ -150,6 +163,14 @@ export default function AppLayout() {
                     </Link>
                   ))}
                   <div className="border-t border-surface-800">
+                    <Link
+                      to="/profiles"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
+                    >
+                      <User className="h-4 w-4" />
+                      Switch Profile
+                    </Link>
                     <button
                       type="button"
                       onClick={handleLogout}

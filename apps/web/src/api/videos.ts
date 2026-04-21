@@ -9,7 +9,7 @@ export async function listVideos(params?: {
   status?: string;
   search?: string;
   categoryId?: string;
-}): Promise<{ data: Video[]; meta: { page: number; limit: number; total: number } }> {
+}): Promise<PaginatedResponse<Video>> {
   const { perPage, ...rest } = params ?? {};
   const { data } = await api.get("/videos", {
     params: { ...rest, ...(perPage ? { limit: perPage } : {}) },

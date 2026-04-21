@@ -1,44 +1,51 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { Spinner } from '@/components/ui/Spinner';
 import { ProfileGrid } from '@/components/profiles';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { getProfiles } from '@/api/profiles';
+import { VerifyPinDialog } from '@/components/pin/VerifyPinDialog';
+import { useProfile } from '@/hooks/useProfile';
+import { verifyProfilePin } from '@/api/profiles';
 
 export default function ProfilesPage() {
   const navigate = useNavigate();
-  const { setActiveProfileId } = useActiveProfile();
-  const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
-
-  const profilesQuery = useQuery({
-    queryKey: ['profiles'],
-    queryFn: getProfiles,
-  });
+  const { profiles, isLoading, selectProfile } = useProfile();
+  
+  const [verifyingProfile, setVerifyingProfile] = useState<any | null>(null);
 
   const handleProfileClick = (profile: any) => {
-    setSelectedProfile(profile.id);
-    setActiveProfileId(profile.id);
+    if (profile.isLocked) {
+      setVerifyingProfile(profile);
+    } else {
+      activateProfile(profile);
+    }
+  };
+
+  const activateProfile = (profile: any) => {
+    selectProfile(profile);
     setTimeout(() => {
       navigate('/');
     }, 300);
   };
 
-  useEffect(() => {
-    if (profilesQuery.data && profilesQuery.data.length === 0) {
-      // Auto create default profile if none exist
+  const handleVerifyPin = async (pin: string) => {
+    if (!verifyingProfile) return false;
+    try {
+      await verifyProfilePin(verifyingProfile.id, pin);
+      activateProfile(verifyingProfile);
+      setVerifyingProfile(null);
+      return true;
+    } catch (err) {
+      return false;
     }
-  }, [profilesQuery.data]);
+  };
 
-  if (profilesQuery.isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Spinner size="lg" />
       </div>
     );
   }
-
-  const profiles = profilesQuery.data ?? [];
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
@@ -56,6 +63,14 @@ export default function ProfilesPage() {
       >
         Manage profiles
       </button>
+
+      <VerifyPinDialog
+        open={!!verifyingProfile}
+        onOpenChange={(open) => !open && setVerifyingProfile(null)}
+        onVerify={handleVerifyPin}
+        title="Profile Locked"
+        description={`Enter PIN for ${verifyingProfile?.name}`}
+      />
     </div>
   );
 }

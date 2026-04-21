@@ -7,6 +7,8 @@ import { Spinner } from '@/components/ui/Spinner';
 import { ProfileGrid } from '@/components/profiles';
 import { getProfiles, deleteProfile } from '@/api/profiles';
 
+import { VerifyPinDialog } from '@/components/pin/VerifyPinDialog';
+
 export default function ManageProfilesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -30,8 +32,27 @@ export default function ManageProfilesPage() {
     },
   });
 
+  const [verifyingProfile, setVerifyingProfile] = useState<any | null>(null);
+
   const handleProfileClick = (profile: any) => {
-    navigate(`/account/profiles/${profile.id}`);
+    if (profile.isLocked) {
+      setVerifyingProfile(profile);
+    } else {
+      navigate(`/account/profiles/${profile.id}`);
+    }
+  };
+
+  const handleVerifyPin = async (pin: string) => {
+    if (!verifyingProfile) return false;
+    try {
+      const { verifyProfilePin } = await import('@/api/profiles');
+      await verifyProfilePin(verifyingProfile.id, pin);
+      navigate(`/account/profiles/${verifyingProfile.id}`);
+      setVerifyingProfile(null);
+      return true;
+    } catch (err) {
+      return false;
+    }
   };
 
   const handleAddProfile = () => {
@@ -39,7 +60,7 @@ export default function ManageProfilesPage() {
   };
 
   const handleDeleteProfile = (profile: any) => {
-    if (profilesQuery.data?.length > 1) {
+    if ((profilesQuery.data ?? []).length > 1) {
       deleteMutation.mutate(profile.id);
     }
   };
@@ -82,6 +103,14 @@ export default function ManageProfilesPage() {
       <p className="text-surface-500 text-sm mt-12 text-center">
         You cannot delete the last profile on your account
       </p>
+
+      <VerifyPinDialog
+        open={!!verifyingProfile}
+        onOpenChange={(open) => !open && setVerifyingProfile(null)}
+        onVerify={handleVerifyPin}
+        title="Profile Locked"
+        description={`Enter PIN for ${verifyingProfile?.name}`}
+      />
     </div>
   );
 }
