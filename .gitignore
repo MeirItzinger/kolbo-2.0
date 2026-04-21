@@ -29,8 +29,12 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+.codex/
+.gemini/
+.zed/
 *.swp
 *.swo
+opencode.json
 
 # Prisma
 apps/api/prisma/*.db
