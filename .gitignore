@@ -47,3 +47,4 @@ coverage/
 # Local uploaded assets (dev)
 apps/api/uploads/
 .vercel
+.env*.local

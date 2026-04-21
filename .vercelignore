@@ -1,0 +1,35 @@
+# Dependencies (Vercel installs fresh)
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+**/dist
+build
+**/build
+
+# Local env files
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Local-only data / uploads
+apps/api/uploads
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+consolidated_videos.json
+
+# Editor / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+*.tsbuildinfo
+coverage
+.nyc_output
