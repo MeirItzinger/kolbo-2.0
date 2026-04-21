@@ -144,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTokens();
       clearUscreenAccessToken();
       clearStoredUscreenUser();
+      localStorage.removeItem("kolbo_active_profile_id");
       qc.setQueryData(AUTH_QUERY_KEY, null);
       qc.clear();
     },

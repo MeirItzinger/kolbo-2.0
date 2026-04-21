@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { queryClient } from "@/lib/queryClient";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ProfileProvider } from "@/hooks/useProfile";
 import { AdvertiserAuthProvider } from "@/hooks/useAdvertiserAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdvertiserRoute } from "@/components/AdvertiserRoute";
@@ -44,6 +45,7 @@ const VerifyEmailPage = lazy(() => import("@/pages/auth/VerifyEmailPage"));
 
 // ── Authenticated app pages ────────────────────────────────────────
 
+const ProfilesPage = lazy(() => import("@/pages/ProfilesPage"));
 const WatchPage = lazy(() => import("@/pages/app/WatchPage"));
 const MyLibraryPage = lazy(() => import("@/pages/app/MyLibraryPage"));
 const AccountPage = lazy(() => import("@/pages/app/AccountPage"));
@@ -54,8 +56,16 @@ const SubscriptionsPage = lazy(
 const PurchasesPage = lazy(() => import("@/pages/app/PurchasesPage"));
 const WatchHistoryPage = lazy(() => import("@/pages/app/WatchHistoryPage"));
 const DevicesPage = lazy(() => import("@/pages/app/DevicesPage"));
+const ManageProfilesPage = lazy(() => import("@/pages/app/ManageProfilesPage"));
+const ProfileEditPage = lazy(() => import("@/pages/app/ProfileEditPage"));
 const CheckoutSuccessPage = lazy(
   () => import("@/pages/app/CheckoutSuccessPage"),
+);
+const ParentalControlsSelectorPage = lazy(
+  () => import("@/pages/app/ParentalControlsSelectorPage"),
+);
+const ParentalControlsEditorPage = lazy(
+  () => import("@/pages/app/ParentalControlsEditorPage"),
 );
 
 // ── Super-admin pages ──────────────────────────────────────────────
@@ -156,7 +166,8 @@ export function App() {
       <BrowserRouter>
         <ScrollToTop />
         <AuthProvider>
-          <AdvertiserAuthProvider>
+          <ProfileProvider>
+            <AdvertiserAuthProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* ── Public ──────────────────────────────── */}
@@ -193,9 +204,13 @@ export function App() {
 
               {/* ── Authenticated app ───────────────────── */}
               <Route element={<ProtectedRoute />}>
+                <Route path="profiles" element={<ProfilesPage />} />
+
                 <Route element={<AppLayout />}>
                   <Route path="library" element={<MyLibraryPage />} />
                   <Route path="account" element={<AccountPage />} />
+                  <Route path="account/profiles" element={<ManageProfilesPage />} />
+                  <Route path="account/profiles/:profileId" element={<ProfileEditPage />} />
                   <Route
                     path="account/subscriptions"
                     element={<SubscriptionsPage />}
@@ -216,6 +231,14 @@ export function App() {
                   <Route
                     path="checkout/success"
                     element={<CheckoutSuccessPage />}
+                  />
+                  <Route
+                    path="account/parental-controls"
+                    element={<ParentalControlsSelectorPage />}
+                  />
+                  <Route
+                    path="account/profiles/:profileId/controls"
+                    element={<ParentalControlsEditorPage />}
                   />
                 </Route>
               </Route>
@@ -349,6 +372,7 @@ export function App() {
             </Routes>
           </Suspense>
           </AdvertiserAuthProvider>
+          </ProfileProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

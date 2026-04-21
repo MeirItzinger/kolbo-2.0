@@ -15,4 +15,11 @@ router.get("/payment-methods", accountController.getPaymentMethods);
 router.get("/devices", accountController.getDevices);
 router.get("/watch-history", accountController.getWatchHistory);
 
+router.get("/settings", accountController.getSettings);
+router.patch("/settings", accountController.updateSettings);
+
+router.post("/parental-pin", accountController.setParentalPin);
+router.post("/parental-pin/verify", accountController.verifyParentalPin);
+router.delete("/parental-pin", accountController.clearParentalPin);
+
 export default router;
