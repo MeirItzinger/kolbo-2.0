@@ -9,6 +9,7 @@ import {
   ShoppingBag,
   Shield,
   ChevronRight,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getSubscriptions } from "@/api/account";
@@ -24,6 +25,12 @@ import { Spinner } from "@/components/ui/Spinner";
 import { formatDate } from "@/lib/utils";
 
 const quickLinks = [
+  {
+    to: "/account/profiles",
+    icon: Users,
+    label: "Manage Profiles",
+    description: "Add, edit or delete user profiles",
+  },
   {
     to: "/account/subscriptions",
     icon: Tv,
@@ -52,7 +59,13 @@ const quickLinks = [
     to: "/account/security",
     icon: Shield,
     label: "Security",
-    description: "Change your password",
+    description: "Change your password and manage PINs",
+  },
+  {
+    to: "/account/parental-controls",
+    icon: Shield,
+    label: "Parental Controls",
+    description: "Manage content restrictions per profile",
   },
 ] as const;
 
@@ -64,8 +77,9 @@ export default function AccountPage() {
     queryFn: getSubscriptions,
   });
 
-  const activeSubs = (subsQuery.data ?? []).filter(
-    (s) => s.status === "active" || s.status === "trialing",
+  const subscriptionsData = Array.isArray(subsQuery.data) ? subsQuery.data : subsQuery.data?.channelSubscriptions || [];
+  const activeSubs = subscriptionsData.filter(
+    (s: any) => s.status === "active" || s.status === "trialing",
   );
 
   return (
@@ -101,8 +115,8 @@ export default function AccountPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-surface-400">Email verified</span>
-                <Badge variant={user.emailVerified ? "success" : "warning"}>
-                  {user.emailVerified ? "Verified" : "Unverified"}
+                <Badge variant={user.emailVerifiedAt ? "success" : "warning"}>
+                  {user.emailVerifiedAt ? "Verified" : "Unverified"}
                 </Badge>
               </div>
             </div>

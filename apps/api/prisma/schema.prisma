@@ -210,6 +210,8 @@ model User {
   isActive              Boolean   @default(true)
   mustChangePassword    Boolean   @default(false)
   lastPasswordChangedAt DateTime?
+  requirePinForPurchases Boolean  @default(false)
+  parentalPinHash       String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -330,6 +332,9 @@ model Profile {
   avatarUrl        String?
   maturitySettings String?
   isKidsProfile    Boolean  @default(false)
+  pinHash          String?
+  isLocked         Boolean  @default(false)
+  parentalControls Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/apiError";
 import { prisma } from "../lib/prisma";
@@ -214,5 +215,103 @@ export const getWatchHistory = asyncHandler(
       data: history,
       meta: { page: Number(page) || 1, limit: take, total },
     });
+  }
+);
+
+const PIN_SALT_ROUNDS = 10;
+
+export const setParentalPin = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { pin } = req.body;
+
+    if (!pin || !/^\d{4}$/.test(pin)) {
+      throw ApiError.badRequest("PIN must be exactly 4 digits");
+    }
+
+    const pinHash = await bcrypt.hash(pin, PIN_SALT_ROUNDS);
+
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { parentalPinHash: pinHash },
+    });
+
+    res.json({ status: "success", message: "Parental PIN set" });
+  }
+);
+
+export const verifyParentalPin = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { pin } = req.body;
+
+    if (!pin || !/^\d{4}$/.test(pin)) {
+      throw ApiError.badRequest("PIN must be exactly 4 digits");
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { parentalPinHash: true },
+    });
+
+    if (!user?.parentalPinHash) {
+      throw ApiError.badRequest("No parental PIN set");
+    }
+
+    const isValid = await bcrypt.compare(pin, user.parentalPinHash);
+
+    if (!isValid) {
+      throw ApiError.unauthorized("Incorrect PIN");
+    }
+
+    res.json({ status: "success", message: "PIN verified" });
+  }
+);
+
+export const clearParentalPin = asyncHandler(
+  async (req: Request, res: Response) => {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { parentalPinHash: null },
+    });
+
+    res.json({ status: "success", message: "Parental PIN removed" });
+  }
+);
+
+export const getSettings = asyncHandler(
+  async (req: Request, res: Response) => {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        requirePinForPurchases: true,
+        parentalPinHash: true,
+      },
+    });
+
+    res.json({
+      status: "success",
+      data: {
+        requirePinForPurchases: user?.requirePinForPurchases ?? false,
+        hasParentalPin: !!user?.parentalPinHash,
+      },
+    });
+  }
+);
+
+export const updateSettings = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { requirePinForPurchases } = req.body;
+
+    const data: Record<string, unknown> = {};
+    if (requirePinForPurchases !== undefined) {
+      data.requirePinForPurchases = requirePinForPurchases;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data,
+      select: { requirePinForPurchases: true },
+    });
+
+    res.json({ status: "success", data: updated });
   }
 );

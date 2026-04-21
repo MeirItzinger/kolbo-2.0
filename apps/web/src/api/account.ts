@@ -50,3 +50,31 @@ export async function getWatchHistory(params?: {
   const { data } = await api.get("/account/watch-history", { params });
   return data;
 }
+
+export interface AccountSettings {
+  requirePinForPurchases: boolean;
+  hasParentalPin: boolean;
+}
+
+export async function getAccountSettings(): Promise<AccountSettings> {
+  const { data } = await api.get("/account/settings");
+  return data.data ?? data;
+}
+
+export async function updateAccountSettings(
+  settings: Partial<Pick<AccountSettings, 'requirePinForPurchases'>>
+): Promise<void> {
+  await api.patch("/account/settings", settings);
+}
+
+export async function setParentalPin(pin: string): Promise<void> {
+  await api.post("/account/parental-pin", { pin });
+}
+
+export async function verifyParentalPin(pin: string): Promise<void> {
+  await api.post("/account/parental-pin/verify", { pin });
+}
+
+export async function clearParentalPin(): Promise<void> {
+  await api.delete("/account/parental-pin");
+}
