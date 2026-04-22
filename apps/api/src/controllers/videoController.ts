@@ -48,6 +48,50 @@ function staffVideoListScope(
   return { OR: or };
 }
 
+async function getProfileRestrictionFilter(profileId: string | null | undefined): Promise<Prisma.VideoWhereInput | null> {
+  // No profile provided - return no filter (100% backwards compatible)
+  if (!profileId) return null;
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: { parentalControls: true },
+  });
+
+  // Profile not found or no controls configured - allow everything
+  if (!profile || !profile.parentalControls) return null;
+
+  const controls = profile.parentalControls as any;
+  const filters: Prisma.VideoWhereInput[] = [];
+
+  // 1. Channel Allow List - ONLY allow allowed channels
+  if (controls.useChannelAllowlist && Array.isArray(controls.allowedChannels)) {
+    filters.push({ channelId: { in: controls.allowedChannels } });
+  }
+
+  // 2. Blocked Channels - exclude blocked channels
+  if (Array.isArray(controls.blockedChannels) && controls.blockedChannels.length > 0) {
+    filters.push({ channelId: { notIn: controls.blockedChannels } });
+  }
+
+  // 3. Blocked Videos - exclude individual blocked videos
+  if (Array.isArray(controls.blockedVideos) && controls.blockedVideos.length > 0) {
+    filters.push({ id: { notIn: controls.blockedVideos } });
+  }
+
+  // 4. Age Rating limit
+  if (controls.ageRating != null) {
+    filters.push({
+      OR: [
+        { ageRating: null },
+        { ageRating: { lte: controls.ageRating } }
+      ]
+    });
+  }
+
+  if (filters.length === 0) return null;
+  return { AND: filters };
+}
+
 /** Categories on a video (many-to-many via VideoCategory). */
 const videoCategoryInclude = {
   categoryLinks: {
@@ -277,6 +321,16 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
     where.categoryLinks = { some: { categoryId: categoryId as string } };
   }
 
+  // Apply profile restriction filtering when profileId is provided in headers
+  const profileId = req.headers['x-profile-id'] as string | undefined;
+  const profileFilter = await getProfileRestrictionFilter(profileId);
+  if (profileFilter) {
+    const parts: Prisma.VideoWhereInput[] = [];
+    if (Object.keys(where).length > 0) parts.push(where);
+    parts.push(profileFilter);
+    where = { AND: parts };
+  }
+
   const adminListRequest =
     forAdmin === "true" || forAdmin === "1";
   const staffScope =
@@ -379,11 +433,12 @@ export const getByIdOrSlug = asyncHandler(
     }
 
     const uscreenAccessToken = extractUscreenAccessToken(req.headers);
+    const profileId = req.headers['x-profile-id'] as string | undefined;
     const access = await checkAccess(
       req.user?.id ?? null,
       video.id,
       req.user?.roles,
-      { uscreenAccessToken }
+      { uscreenAccessToken, profileId }
     );
     const payload = attachCategoriesToVideo(
       video as unknown as Record<string, unknown>,

@@ -21,6 +21,7 @@ export interface AccessCheckResult {
 
 export interface CheckAccessOptions {
   uscreenAccessToken?: string | null;
+  profileId?: string | null;
 }
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
@@ -32,6 +33,53 @@ function concurrencyTierToMax(tier: ConcurrencyTier): number {
     STREAMS_5: 5,
   };
   return map[tier] ?? 1;
+}
+
+async function validateProfileRestrictions(profileId: string | null | undefined, video: { id: string; channelId: string; categoryId: string | null; ageRating: number | null }): Promise<void> {
+  // No profile provided - skip all restrictions (100% backwards compatible)
+  if (!profileId) return;
+
+  const profile = await prisma.profile.findUnique({
+    where: { id: profileId },
+    select: {
+      userId: true,
+      parentalControls: true,
+    },
+  });
+
+  // Profile not found or no controls configured - allow
+  if (!profile || !profile.parentalControls) return;
+
+  const controls = profile.parentalControls as any;
+
+  // 1. Channel Allow List check
+  if (controls.useChannelAllowlist && Array.isArray(controls.allowedChannels)) {
+    if (!controls.allowedChannels.includes(video.channelId)) {
+      throw ApiError.forbidden("This channel is not allowed for this profile");
+    }
+  }
+
+  // 2. Blocked Channels check
+  if (Array.isArray(controls.blockedChannels) && controls.blockedChannels.includes(video.channelId)) {
+    throw ApiError.forbidden("This channel is blocked for this profile");
+  }
+
+  // 3. Blocked Categories check
+  if (Array.isArray(controls.blockedCategories) && video.categoryId && controls.blockedCategories.includes(video.categoryId)) {
+    throw ApiError.forbidden("This content category is blocked for this profile");
+  }
+
+  // 4. Blocked Videos check
+  if (Array.isArray(controls.blockedVideos) && controls.blockedVideos.includes(video.id)) {
+    throw ApiError.forbidden("This video is blocked for this profile");
+  }
+
+  // 5. Age Rating check
+  if (controls.ageRating != null && video.ageRating != null && video.ageRating > controls.ageRating) {
+    throw ApiError.forbidden("This video exceeds the allowed age rating for this profile");
+  }
+
+  // All checks passed
 }
 
 function resolveAdMode(
@@ -140,6 +188,9 @@ export async function checkAccess(
   if (!asset) {
     throw ApiError.badRequest("No playable asset found for this video");
   }
+
+  // Profile restriction enforcement - runs only when profileId is provided
+  await validateProfileRestrictions(options?.profileId, video);
 
   const baseResult: Pick<AccessCheckResult, "playbackPolicy" | "tokenRequired"> = {
     playbackPolicy: asset.playbackPolicy,
