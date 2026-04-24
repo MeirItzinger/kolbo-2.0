@@ -114,6 +114,8 @@ export interface Video {
   scheduledPublishAt: string | null;
   durationSeconds: number | null;
   releaseDate: string | null;
+  /** Maturity rating: G | PG | PG-13 | R | null (NR/unrated). */
+  maturityRating?: string | null;
   isFree: boolean;
   freeWithAds: boolean;
   cheaperWithAdsAllowed: boolean;

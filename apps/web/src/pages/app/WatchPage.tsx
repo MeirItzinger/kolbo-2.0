@@ -1,13 +1,14 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Lock } from "lucide-react";
 import { getVideo } from "@/api/videos";
 import { api, getUscreenAccessToken } from "@/api/client";
 import { VideoPlayer } from "@/features/player/VideoPlayer";
 import { PrerollAd } from "@/features/player/PrerollAd";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
+import { useMaturityFilter } from "@/hooks/useMaturityFilter";
 import axios from "axios";
 
 interface PlaybackData {
@@ -73,6 +74,8 @@ export default function WatchPage() {
   });
 
   const video = videoQuery.data;
+  const { isAllowed: isMaturityAllowed, activeRatingCap } = useMaturityFilter();
+  const blockedByMaturity = !!video && !isMaturityAllowed(video as any);
 
   const tokenQuery = useQuery({
     queryKey: ["playback-token", video?.id],
@@ -130,6 +133,36 @@ export default function WatchPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-black">
         <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (video && blockedByMaturity) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-black px-4">
+        <Lock className="mb-4 h-12 w-12 text-warning" />
+        <h2 className="mb-2 text-xl font-semibold text-white">
+          Blocked by parental controls
+        </h2>
+        <p className="mb-1 text-center text-surface-400">
+          This title is rated{" "}
+          <span className="font-semibold text-white">
+            {video.maturityRating ?? "NR"}
+          </span>
+          .
+        </p>
+        <p className="mb-6 text-center text-surface-400">
+          Active profile only allows up to{" "}
+          <span className="font-semibold text-white">{activeRatingCap}</span>.
+        </p>
+        <div className="flex gap-3">
+          <Button asChild variant="outline">
+            <Link to="/profiles/select?force=1">Switch profile</Link>
+          </Button>
+          <Button asChild>
+            <Link to="/account/parental-controls">Adjust controls</Link>
+          </Button>
+        </div>
       </div>
     );
   }

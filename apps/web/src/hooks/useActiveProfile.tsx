@@ -10,6 +10,10 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { listProfiles } from "@/api/profiles";
+import {
+  getParentalControls,
+  type ParentalControls,
+} from "@/api/parentalControls";
 import type { Profile } from "@/types";
 
 const STORAGE_KEY = "kolbo_active_profile_id";
@@ -17,6 +21,7 @@ const STORAGE_KEY = "kolbo_active_profile_id";
 interface ActiveProfileContextValue {
   profiles: Profile[];
   activeProfile: Profile | null;
+  parentalControls: ParentalControls | null;
   isLoading: boolean;
   setActiveProfile: (profile: Profile | null) => void;
   clearActiveProfile: () => void;
@@ -77,6 +82,13 @@ export function ActiveProfileProvider({ children }: { children: ReactNode }) {
     return profiles.find((p) => p.id === activeId) ?? null;
   }, [activeId, profiles]);
 
+  const { data: parentalControls = null } = useQuery<ParentalControls | null>({
+    queryKey: ["profiles", activeProfile?.id, "parental-controls"],
+    queryFn: () => getParentalControls(activeProfile!.id),
+    enabled: !!activeProfile,
+    staleTime: 1000 * 30,
+  });
+
   const setActiveProfile = useCallback((profile: Profile | null) => {
     const id = profile?.id ?? null;
     setActiveIdState(id);
@@ -98,6 +110,7 @@ export function ActiveProfileProvider({ children }: { children: ReactNode }) {
   const value: ActiveProfileContextValue = {
     profiles,
     activeProfile,
+    parentalControls,
     isLoading,
     setActiveProfile,
     clearActiveProfile,

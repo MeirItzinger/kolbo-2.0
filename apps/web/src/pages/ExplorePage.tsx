@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
+import { useMaturityFilter } from "@/hooks/useMaturityFilter";
 import type { Video } from "@/types";
 
 export default function ExplorePage() {
@@ -47,6 +48,7 @@ export default function ExplorePage() {
   });
 
   const channels = channelsQuery.data?.data ?? [];
+  const { filter: filterMaturity } = useMaturityFilter();
   /** Dedupe by id: offset pagination + changing sort keys can surface the same row on multiple pages. */
   const videos = useMemo(() => {
     const seen = new Set<string>();
@@ -59,8 +61,8 @@ export default function ExplorePage() {
         }
       }
     }
-    return out;
-  }, [videosQuery.data?.pages]);
+    return filterMaturity(out);
+  }, [videosQuery.data?.pages, filterMaturity]);
   const activeChannel = channels.find((c) => c.id === channelFilter);
 
   const setChannel = (id: string) => {

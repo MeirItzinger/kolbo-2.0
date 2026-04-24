@@ -330,6 +330,7 @@ model Profile {
   name             String
   avatarUrl        String?
   maturitySettings String?
+  parentalControls Json?
   isKidsProfile    Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -550,6 +551,7 @@ model Video {
   scheduledPublishAt    DateTime?
   durationSeconds       Int?
   releaseDate           DateTime?
+  maturityRating        String?
   isFree                Boolean         @default(false)
   freeWithAds           Boolean         @default(false)
   cheaperWithAdsAllowed Boolean         @default(false)

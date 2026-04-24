@@ -52,6 +52,9 @@ const SecurityPage = lazy(() => import("@/pages/app/SecurityPage"));
 const SettingsPage = lazy(() => import("@/pages/app/SettingsPage"));
 const ProfilesPage = lazy(() => import("@/pages/app/ProfilesPage"));
 const ProfilePickerPage = lazy(() => import("@/pages/app/ProfilePickerPage"));
+const ParentalControlsPage = lazy(
+  () => import("@/pages/app/ParentalControlsPage"),
+);
 const SubscriptionsPage = lazy(
   () => import("@/pages/app/SubscriptionsPage"),
 );
@@ -225,6 +228,10 @@ export function App() {
                   <Route
                     path="account/profiles"
                     element={<ProfilesPage />}
+                  />
+                  <Route
+                    path="account/parental-controls"
+                    element={<ParentalControlsPage />}
                   />
                 </Route>
                 <Route
