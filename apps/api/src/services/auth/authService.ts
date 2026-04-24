@@ -726,6 +726,7 @@ export async function getCurrentUser(userId: string) {
       emailVerifiedAt: true,
       stripeCustomerId: true,
       isActive: true,
+      requirePinForPurchases: true,
       createdAt: true,
       roles: {
         include: {

@@ -48,6 +48,7 @@ const WatchPage = lazy(() => import("@/pages/app/WatchPage"));
 const MyLibraryPage = lazy(() => import("@/pages/app/MyLibraryPage"));
 const AccountPage = lazy(() => import("@/pages/app/AccountPage"));
 const SecurityPage = lazy(() => import("@/pages/app/SecurityPage"));
+const SettingsPage = lazy(() => import("@/pages/app/SettingsPage"));
 const SubscriptionsPage = lazy(
   () => import("@/pages/app/SubscriptionsPage"),
 );
@@ -212,6 +213,10 @@ export function App() {
                   <Route
                     path="account/security"
                     element={<SecurityPage />}
+                  />
+                  <Route
+                    path="account/settings"
+                    element={<SettingsPage />}
                   />
                   <Route
                     path="checkout/success"

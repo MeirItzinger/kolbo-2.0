@@ -31,6 +31,7 @@ export interface User {
   emailVerifiedAt: string | null;
   stripeCustomerId: string | null;
   isActive: boolean;
+  requirePinForPurchases?: boolean;
   roles: UserRole[];
   profiles?: Profile[];
   createdAt: string;
