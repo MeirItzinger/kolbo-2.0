@@ -11,13 +11,27 @@ import {
   ChevronDown,
   Library,
   Search,
+  Users,
+  Check,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/Button";
+import { useActiveProfile } from "@/hooks/useActiveProfile";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
+
+function profileInitials(name: string) {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "?"
+  );
+}
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const { profiles, activeProfile, setActiveProfile } = useActiveProfile();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -48,6 +62,7 @@ export default function AppLayout() {
 
   const accountLinks = [
     { to: "/account", label: "Account", icon: User },
+    { to: "/account/profiles", label: "Manage Profiles", icon: Users },
     { to: "/account/subscriptions", label: "Subscriptions", icon: CreditCard },
     { to: "/account/purchases", label: "Purchases", icon: Library },
     { to: "/account/history", label: "Watch History", icon: History },
@@ -129,7 +144,7 @@ export default function AppLayout() {
               </button>
 
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 rounded-lg border border-surface-700 bg-surface-900 py-1 shadow-xl">
+                <div className="absolute right-0 mt-2 w-64 rounded-lg border border-surface-700 bg-surface-900 py-1 shadow-xl">
                   <div className="border-b border-surface-800 px-4 py-3">
                     <p className="text-sm font-medium text-white">
                       {user?.firstName} {user?.lastName}
@@ -138,6 +153,56 @@ export default function AppLayout() {
                       {user?.email}
                     </p>
                   </div>
+
+                  {profiles.length > 0 && (
+                    <div className="border-b border-surface-800 py-1">
+                      <p className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-surface-500">
+                        Profiles
+                      </p>
+                      {profiles.map((profile) => {
+                        const isActive = activeProfile?.id === profile.id;
+                        return (
+                          <button
+                            key={profile.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveProfile(profile);
+                              setDropdownOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                              isActive
+                                ? "bg-surface-800/60 text-white"
+                                : "text-surface-300 hover:bg-surface-800 hover:text-white"
+                            }`}
+                          >
+                            <Avatar className="h-6 w-6">
+                              {profile.avatarUrl ? (
+                                <AvatarImage src={profile.avatarUrl} />
+                              ) : null}
+                              <AvatarFallback className="text-[10px]">
+                                {profileInitials(profile.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="flex-1 truncate text-left">
+                              {profile.name}
+                            </span>
+                            {isActive && (
+                              <Check className="h-3.5 w-3.5 text-primary-400" />
+                            )}
+                          </button>
+                        );
+                      })}
+                      <Link
+                        to="/profiles/select?force=1"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-surface-400 hover:bg-surface-800 hover:text-white"
+                      >
+                        <Users className="h-4 w-4" />
+                        Switch profile…
+                      </Link>
+                    </div>
+                  )}
+
                   {accountLinks.map((link) => (
                     <Link
                       key={link.to}

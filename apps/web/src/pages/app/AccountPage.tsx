@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   User,
+  Users,
   CreditCard,
   Tv,
   History,
@@ -25,6 +26,12 @@ import { Spinner } from "@/components/ui/Spinner";
 import { formatDate } from "@/lib/utils";
 
 const quickLinks = [
+  {
+    to: "/account/profiles",
+    icon: Users,
+    label: "Profiles",
+    description: "Add or edit who's using this account",
+  },
   {
     to: "/account/subscriptions",
     icon: Tv,
@@ -71,8 +78,11 @@ export default function AccountPage() {
     queryFn: getSubscriptions,
   });
 
-  const activeSubs = (subsQuery.data ?? []).filter(
-    (s) => s.status === "active" || s.status === "trialing",
+  const subsList = Array.isArray(subsQuery.data)
+    ? (subsQuery.data as any[])
+    : (subsQuery.data?.channelSubscriptions ?? []);
+  const activeSubs = subsList.filter(
+    (s: any) => s.status === "active" || s.status === "trialing",
   );
 
   return (

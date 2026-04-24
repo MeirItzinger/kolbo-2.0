@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { queryClient } from "@/lib/queryClient";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ActiveProfileProvider } from "@/hooks/useActiveProfile";
 import { AdvertiserAuthProvider } from "@/hooks/useAdvertiserAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdvertiserRoute } from "@/components/AdvertiserRoute";
@@ -49,6 +50,8 @@ const MyLibraryPage = lazy(() => import("@/pages/app/MyLibraryPage"));
 const AccountPage = lazy(() => import("@/pages/app/AccountPage"));
 const SecurityPage = lazy(() => import("@/pages/app/SecurityPage"));
 const SettingsPage = lazy(() => import("@/pages/app/SettingsPage"));
+const ProfilesPage = lazy(() => import("@/pages/app/ProfilesPage"));
+const ProfilePickerPage = lazy(() => import("@/pages/app/ProfilePickerPage"));
 const SubscriptionsPage = lazy(
   () => import("@/pages/app/SubscriptionsPage"),
 );
@@ -157,6 +160,7 @@ export function App() {
       <BrowserRouter>
         <ScrollToTop />
         <AuthProvider>
+          <ActiveProfileProvider>
           <AdvertiserAuthProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
@@ -218,6 +222,16 @@ export function App() {
                     path="account/settings"
                     element={<SettingsPage />}
                   />
+                  <Route
+                    path="account/profiles"
+                    element={<ProfilesPage />}
+                  />
+                </Route>
+                <Route
+                  path="profiles/select"
+                  element={<ProfilePickerPage />}
+                />
+                <Route element={<AppLayout />}>
                   <Route
                     path="checkout/success"
                     element={<CheckoutSuccessPage />}
@@ -354,6 +368,7 @@ export function App() {
             </Routes>
           </Suspense>
           </AdvertiserAuthProvider>
+          </ActiveProfileProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
