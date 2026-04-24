@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertTriangle, Lock } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Lock, Clock, Moon } from "lucide-react";
 import { getVideo } from "@/api/videos";
 import { api, getUscreenAccessToken } from "@/api/client";
 import { VideoPlayer } from "@/features/player/VideoPlayer";
@@ -9,6 +9,8 @@ import { PrerollAd } from "@/features/player/PrerollAd";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { useMaturityFilter } from "@/hooks/useMaturityFilter";
+import { useActiveProfile } from "@/hooks/useActiveProfile";
+import { useWatchTimeLimit } from "@/hooks/useWatchTimeLimit";
 import axios from "axios";
 
 interface PlaybackData {
@@ -61,6 +63,12 @@ async function endSession(sessionId: string): Promise<void> {
 
 let adRequestCounter = 0;
 
+function formatHour(h: number): string {
+  if (!Number.isFinite(h)) return "—";
+  const hh = String(Math.floor(h) % 24).padStart(2, "0");
+  return `${hh}:00`;
+}
+
 export default function WatchPage() {
   const { slug } = useParams<{ slug: string }>();
   const sessionEndedRef = useRef(false);
@@ -76,6 +84,11 @@ export default function WatchPage() {
   const video = videoQuery.data;
   const { isAllowed: isMaturityAllowed, activeRatingCap } = useMaturityFilter();
   const blockedByMaturity = !!video && !isMaturityAllowed(video as any);
+
+  const { activeProfile, parentalControls } = useActiveProfile();
+  const watchTime = useWatchTimeLimit(activeProfile?.id, parentalControls);
+  const blockedByTime = watchTime.isOver;
+  const blockedByHours = watchTime.isOutsideAllowedHours;
 
   const tokenQuery = useQuery({
     queryKey: ["playback-token", video?.id],
@@ -129,10 +142,81 @@ export default function WatchPage() {
     };
   }, [sessionId]);
 
+  // Tick the per-profile daily watch budget every second while real content
+  // is on-screen (skip the preroll ad and any blocked state).
+  const watchIncrementRef = useRef(watchTime.increment);
+  watchIncrementRef.current = watchTime.increment;
+  const shouldCountTime =
+    !!video &&
+    !blockedByMaturity &&
+    !blockedByTime &&
+    !blockedByHours &&
+    !showingAd &&
+    !!activeProfile?.id;
+  useEffect(() => {
+    if (!shouldCountTime) return;
+    const id = setInterval(() => watchIncrementRef.current(1), 1000);
+    return () => clearInterval(id);
+  }, [shouldCountTime]);
+
   if (videoQuery.isLoading || tokenQuery.isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-black">
         <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (video && blockedByHours) {
+    const range = parentalControls?.allowedHours;
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-black px-4">
+        <Moon className="mb-4 h-12 w-12 text-warning" />
+        <h2 className="mb-2 text-xl font-semibold text-white">
+          Outside allowed hours
+        </h2>
+        <p className="mb-6 max-w-md text-center text-surface-400">
+          {range
+            ? `${activeProfile?.name ?? "This profile"} can watch between ${formatHour(range.start)} and ${formatHour(range.end)}.`
+            : "This profile is currently outside its allowed watch window."}
+        </p>
+        <div className="flex gap-3">
+          <Button asChild variant="outline">
+            <Link to="/profiles/select?force=1">Switch profile</Link>
+          </Button>
+          <Button asChild>
+            <Link to="/account/parental-controls">Adjust controls</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (video && blockedByTime) {
+    const limit = parentalControls?.dailyTimeLimitMinutes ?? 0;
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-black px-4">
+        <Clock className="mb-4 h-12 w-12 text-warning" />
+        <h2 className="mb-2 text-xl font-semibold text-white">
+          Time&apos;s up for today
+        </h2>
+        <p className="mb-1 text-center text-surface-400">
+          {activeProfile?.name ?? "This profile"} has reached today&apos;s
+          {" "}
+          <span className="font-semibold text-white">{limit} min</span> watch
+          limit.
+        </p>
+        <p className="mb-6 text-center text-surface-500">
+          The budget refreshes at midnight.
+        </p>
+        <div className="flex gap-3">
+          <Button asChild variant="outline">
+            <Link to="/profiles/select?force=1">Switch profile</Link>
+          </Button>
+          <Button asChild>
+            <Link to="/account/parental-controls">Adjust controls</Link>
+          </Button>
+        </div>
       </div>
     );
   }

@@ -231,7 +231,7 @@ export default function ParentalControlsPage() {
                     blank for unlimited.
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <div className="flex items-center gap-3">
                     <Input
                       type="number"
@@ -250,6 +250,12 @@ export default function ParentalControlsPage() {
                     />
                     <span className="text-sm text-surface-400">minutes / day</span>
                   </div>
+                  {selectedProfileId && (
+                    <TodaysWatchUsage
+                      profileId={selectedProfileId}
+                      limitMinutes={controls.dailyTimeLimitMinutes ?? null}
+                    />
+                  )}
                 </CardContent>
               </Card>
 
@@ -369,6 +375,56 @@ export default function ParentalControlsPage() {
           </Link>
         }
       />
+    </div>
+  );
+}
+
+function TodaysWatchUsage({
+  profileId,
+  limitMinutes,
+}: {
+  profileId: string;
+  limitMinutes: number | null;
+}) {
+  const [, force] = useState(0);
+  const key = useMemo(() => {
+    const d = new Date();
+    return `kolbo_watch_seconds_${profileId}_${d.getFullYear()}-${String(
+      d.getMonth() + 1,
+    ).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, [profileId]);
+
+  const usedSeconds = (() => {
+    if (typeof localStorage === "undefined") return 0;
+    const raw = localStorage.getItem(key);
+    const n = raw ? Number.parseInt(raw, 10) : 0;
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  })();
+  const usedMinutes = Math.floor(usedSeconds / 60);
+  const usedSecondsRem = usedSeconds % 60;
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-surface-800 bg-surface-900/40 px-3 py-2">
+      <span className="text-sm text-surface-300">
+        Used today on this device:{" "}
+        <span className="font-semibold text-white">
+          {usedMinutes}m {usedSecondsRem}s
+        </span>
+        {limitMinutes != null && limitMinutes > 0 && (
+          <span className="text-surface-400"> / {limitMinutes}m</span>
+        )}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          if (typeof localStorage !== "undefined")
+            localStorage.removeItem(key);
+          force((n) => n + 1);
+        }}
+      >
+        Reset today
+      </Button>
     </div>
   );
 }
