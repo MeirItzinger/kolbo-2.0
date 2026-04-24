@@ -360,7 +360,7 @@ export default function PublicLayout() {
           </div>
           <div className="mt-8 border-t border-surface-800 pt-8">
             <p className="text-center text-sm text-surface-500">
-              &copy; {new Date().getFullYear()} Kolbo. All rights reserved.
+              &copy; {new Date().getFullYear()} Kolbo — deployed via auto-push.
             </p>
           </div>
         </div>
