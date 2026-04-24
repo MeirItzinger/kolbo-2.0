@@ -1,43 +1,49 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth";
 import * as stripeController from "../controllers/stripeController";
+import { requirePurchasePin } from "../controllers/pinController";
 
 const router = Router();
 
 router.post(
   "/checkout/subscription",
   authenticate,
-  stripeController.createCheckoutForSubscription
+  requirePurchasePin,
+  stripeController.createCheckoutForSubscription,
 );
 
 router.post(
   "/checkout/subscriptions",
   authenticate,
-  stripeController.createCheckoutForMultiSubscription
+  requirePurchasePin,
+  stripeController.createCheckoutForMultiSubscription,
 );
 
 router.post(
   "/checkout/bundle",
   authenticate,
-  stripeController.createCheckoutForBundle
+  requirePurchasePin,
+  stripeController.createCheckoutForBundle,
 );
 
 router.post(
   "/checkout/rental",
   authenticate,
-  stripeController.createCheckoutForRental
+  requirePurchasePin,
+  stripeController.createCheckoutForRental,
 );
 
 router.post(
   "/checkout/purchase",
   authenticate,
-  stripeController.createCheckoutForPurchase
+  requirePurchasePin,
+  stripeController.createCheckoutForPurchase,
 );
 
 router.get(
   "/session/:sessionId",
   authenticate,
-  stripeController.verifySession
+  stripeController.verifySession,
 );
 
 export default router;

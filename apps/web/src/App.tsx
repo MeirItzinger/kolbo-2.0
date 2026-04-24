@@ -5,6 +5,7 @@ import { ScrollToTop } from "@/components/ScrollToTop";
 import { queryClient } from "@/lib/queryClient";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ActiveProfileProvider } from "@/hooks/useActiveProfile";
+import { PinGateProvider } from "@/hooks/usePinGate";
 import { AdvertiserAuthProvider } from "@/hooks/useAdvertiserAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdvertiserRoute } from "@/components/AdvertiserRoute";
@@ -55,6 +56,7 @@ const ProfilePickerPage = lazy(() => import("@/pages/app/ProfilePickerPage"));
 const ParentalControlsPage = lazy(
   () => import("@/pages/app/ParentalControlsPage"),
 );
+const PinResetPage = lazy(() => import("@/pages/app/PinResetPage"));
 const SubscriptionsPage = lazy(
   () => import("@/pages/app/SubscriptionsPage"),
 );
@@ -164,6 +166,7 @@ export function App() {
         <ScrollToTop />
         <AuthProvider>
           <ActiveProfileProvider>
+          <PinGateProvider>
           <AdvertiserAuthProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
@@ -232,6 +235,10 @@ export function App() {
                   <Route
                     path="account/parental-controls"
                     element={<ParentalControlsPage />}
+                  />
+                  <Route
+                    path="account/pin-reset"
+                    element={<PinResetPage />}
                   />
                 </Route>
                 <Route
@@ -375,6 +382,7 @@ export function App() {
             </Routes>
           </Suspense>
           </AdvertiserAuthProvider>
+          </PinGateProvider>
           </ActiveProfileProvider>
         </AuthProvider>
       </BrowserRouter>

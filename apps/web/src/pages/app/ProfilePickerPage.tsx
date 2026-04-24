@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Settings as SettingsIcon } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { useActiveProfile } from "@/hooks/useActiveProfile";
+import { getProfilePinStatus, verifyProfilePin } from "@/api/pin";
+import { PinPrompt } from "@/components/pin/PinPrompt";
 import type { Profile } from "@/types";
 
 function initials(name: string) {
@@ -25,6 +27,7 @@ export default function ProfilePickerPage() {
     useActiveProfile();
 
   const next = params.get("next") || "/explore";
+  const [pendingProfile, setPendingProfile] = useState<Profile | null>(null);
 
   // If a profile is already active and the user lands here directly, send them on.
   useEffect(() => {
@@ -33,9 +36,22 @@ export default function ProfilePickerPage() {
     }
   }, [activeProfile, navigate, next, params]);
 
-  const choose = (profile: Profile) => {
+  const completeChoose = (profile: Profile) => {
     setActiveProfile(profile);
     navigate(next, { replace: true });
+  };
+
+  const choose = async (profile: Profile) => {
+    try {
+      const { isSet } = await getProfilePinStatus(profile.id);
+      if (isSet) {
+        setPendingProfile(profile);
+        return;
+      }
+    } catch {
+      // If status check fails, fall through and pick anyway.
+    }
+    completeChoose(profile);
   };
 
   return (
@@ -65,7 +81,10 @@ export default function ProfilePickerPage() {
                 </AvatarFallback>
               </Avatar>
               <div className="space-y-1 text-center">
-                <p className="text-sm font-medium text-white">{profile.name}</p>
+                <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-white">
+                  {profile.name}
+                  {/* small lock hint will be visible when status is fetched on click */}
+                </p>
                 {profile.isKidsProfile && <Badge>Kids</Badge>}
               </div>
             </button>
@@ -89,6 +108,20 @@ export default function ProfilePickerPage() {
       >
         <SettingsIcon className="h-4 w-4" /> Manage profiles
       </Link>
+
+      <PinPrompt
+        open={!!pendingProfile}
+        title={`Enter ${pendingProfile?.name ?? "profile"} PIN`}
+        description="This profile is PIN-protected."
+        onClose={() => setPendingProfile(null)}
+        onVerify={async (pin) => {
+          if (!pendingProfile) return false;
+          await verifyProfilePin(pendingProfile.id, pin);
+          completeChoose(pendingProfile);
+          setPendingProfile(null);
+          return true;
+        }}
+      />
     </div>
   );
 }

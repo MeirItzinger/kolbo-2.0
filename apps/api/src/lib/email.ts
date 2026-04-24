@@ -70,6 +70,30 @@ export async function sendPasswordResetEmail(
   });
 }
 
+export async function sendPinResetEmail(
+  to: string,
+  token: string,
+): Promise<void> {
+  const resetUrl = `${env.CLIENT_URL}/account/pin-reset?token=${token}`;
+
+  await resend.emails.send({
+    from: env.EMAIL_FROM,
+    to,
+    subject: "Reset your Kolbo parental PIN",
+    html: wrapHtml(
+      "Parental PIN reset",
+      `
+        <p>You requested to reset the parental PIN on your Kolbo account.</p>
+        ${ctaButton("Reset Parental PIN", resetUrl)}
+        <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
+          This link expires in 1 hour. If you didn't request this, your account is still safe — your PIN is unchanged.
+        </p>
+        <p style="color: #9ca3af; font-size: 12px;">Or copy this link: ${resetUrl}</p>
+      `,
+    ),
+  });
+}
+
 export interface SendInviteEmailArgs {
   to: string;
   inviteUrl: string;

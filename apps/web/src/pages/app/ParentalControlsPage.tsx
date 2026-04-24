@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { CheckCircle2, ShieldCheck, ChevronDown } from "lucide-react";
+import { CheckCircle2, Lock, ShieldCheck, ChevronDown } from "lucide-react";
+import {
+  getParentalPinStatus,
+  readGrace,
+  verifyParentalPin,
+} from "@/api/pin";
+import { PinPrompt } from "@/components/pin/PinPrompt";
 import {
   Card,
   CardContent,
@@ -35,6 +41,19 @@ export default function ParentalControlsPage() {
     null,
   );
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [pinPromptOpen, setPinPromptOpen] = useState(false);
+  const [unlocked, setUnlocked] = useState(() => !!readGrace("parental"));
+
+  const pinStatusQuery = useQuery({
+    queryKey: ["account", "parental-pin", "status"],
+    queryFn: getParentalPinStatus,
+  });
+  const pinIsSet = !!pinStatusQuery.data?.isSet;
+  const isLocked = pinIsSet && !unlocked;
+
+  useEffect(() => {
+    if (!pinIsSet) setUnlocked(true);
+  }, [pinIsSet]);
 
   const { data: profiles = [], isLoading: profilesLoading } = useQuery<
     Profile[]
@@ -100,7 +119,26 @@ export default function ParentalControlsPage() {
         )}
       </div>
 
-      {profilesLoading ? (
+      {isLocked ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-600/15">
+              <Lock className="h-6 w-6 text-primary-400" />
+            </div>
+            <div>
+              <p className="text-base font-medium text-white">
+                Parental controls are PIN-protected
+              </p>
+              <p className="mt-1 text-sm text-surface-400">
+                Enter your parental PIN to make changes.
+              </p>
+            </div>
+            <Button onClick={() => setPinPromptOpen(true)}>
+              Enter PIN
+            </Button>
+          </CardContent>
+        </Card>
+      ) : profilesLoading ? (
         <Spinner />
       ) : profiles.length === 0 ? (
         <Card>
@@ -310,6 +348,27 @@ export default function ParentalControlsPage() {
           )}
         </>
       )}
+
+      <PinPrompt
+        open={pinPromptOpen}
+        title="Enter parental PIN"
+        description="Confirm your PIN to edit parental controls."
+        onClose={() => setPinPromptOpen(false)}
+        onVerify={async (pin) => {
+          await verifyParentalPin(pin);
+          setUnlocked(true);
+          setPinPromptOpen(false);
+          return true;
+        }}
+        footer={
+          <Link
+            to="/account/security?reset=parental"
+            className="text-xs text-surface-400 hover:text-white"
+          >
+            Forgot PIN?
+          </Link>
+        }
+      />
     </div>
   );
 }

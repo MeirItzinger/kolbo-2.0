@@ -23,8 +23,30 @@ api.interceptors.request.use((config) => {
   if (uscreenToken) {
     config.headers["X-Uscreen-Access-Token"] = uscreenToken;
   }
+  // Auto-attach parental grace for protected URLs if available.
+  if (!config.headers["X-Pin-Grace"] && shouldAttachParentalGrace(config.url)) {
+    try {
+      const raw = localStorage.getItem("kolbo_pin_grace_parental");
+      if (raw) {
+        const parsed = JSON.parse(raw) as { token: string; expiresAt: number };
+        if (parsed?.token && parsed.expiresAt > Date.now()) {
+          config.headers["X-Pin-Grace"] = parsed.token;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   return config;
 });
+
+function shouldAttachParentalGrace(url: string | undefined): boolean {
+  if (!url) return false;
+  return (
+    url.startsWith("/stripe/checkout") ||
+    /\/profiles\/[^/]+\/parental-controls/.test(url)
+  );
+}
 
 let refreshPromise: Promise<string> | null = null;
 
@@ -122,6 +144,14 @@ function resolveUploads(value: unknown): unknown {
   return value;
 }
 
+/** Set by PinGateProvider so the interceptor can prompt for a parental PIN on demand. */
+let parentalGraceRequester: (() => Promise<string | null>) | null = null;
+export function registerParentalGraceRequester(
+  fn: (() => Promise<string | null>) | null,
+) {
+  parentalGraceRequester = fn;
+}
+
 api.interceptors.response.use(
   (res) => {
     res.data = resolveUploads(res.data);
@@ -130,8 +160,19 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config;
     const accessToken = getAccessToken();
+    const status = error.response?.status;
 
-    if (error.response?.status !== 401 || original._retry) {
+    // 428 → server requires a parental PIN grace token. Prompt and retry.
+    if (status === 428 && !original._pinRetry && parentalGraceRequester) {
+      original._pinRetry = true;
+      const token = await parentalGraceRequester();
+      if (!token) return Promise.reject(error);
+      original.headers = original.headers || {};
+      original.headers["X-Pin-Grace"] = token;
+      return api(original);
+    }
+
+    if (status !== 401 || original._retry) {
       return Promise.reject(error);
     }
 

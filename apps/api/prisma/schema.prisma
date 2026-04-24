@@ -211,6 +211,8 @@ model User {
   mustChangePassword    Boolean   @default(false)
   lastPasswordChangedAt DateTime?
   requirePinForPurchases Boolean  @default(false)
+  parentalPinHash        String?
+  parentalPinSetAt       DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -221,6 +223,7 @@ model User {
   inviteTokens           InviteToken[]
   profiles               Profile[]
   devices                Device[]
+  pinAttempts            PinAttemptLog[]
   channelAdmins          ChannelAdmin[]
   subscriptions          UserSubscription[]
   bundleSubscriptions    UserBundleSubscription[]
@@ -332,6 +335,8 @@ model Profile {
   maturitySettings String?
   parentalControls Json?
   isKidsProfile    Boolean  @default(false)
+  pinHash          String?
+  pinSetAt         DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -339,8 +344,25 @@ model Profile {
   watchSessions WatchSession[]
   watchHistory  WatchHistory[]
   favorites     Favorite[]
+  pinAttempts   PinAttemptLog[]
 
   @@index([userId])
+}
+
+model PinAttemptLog {
+  id         String   @id @default(cuid())
+  userId     String
+  profileId  String?
+  pinType    String   // "parental" | "profile"
+  success    Boolean
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile    Profile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([userId, pinType, createdAt])
+  @@index([profileId, createdAt])
 }
 
 model Device {

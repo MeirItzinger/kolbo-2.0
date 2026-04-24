@@ -1,4 +1,5 @@
 import { api } from "./client";
+import { readGrace } from "./pin";
 
 export type MaturityRating = "G" | "PG" | "PG-13" | "R" | "NR";
 
@@ -29,9 +30,11 @@ export async function updateParentalControls(
   profileId: string,
   patch: Partial<ParentalControls>,
 ): Promise<ParentalControls> {
+  const grace = readGrace("parental");
   const { data } = await api.patch(
     `/profiles/${profileId}/parental-controls`,
     patch,
+    grace ? { headers: { "X-Pin-Grace": grace } } : undefined,
   );
   return data.data;
 }
