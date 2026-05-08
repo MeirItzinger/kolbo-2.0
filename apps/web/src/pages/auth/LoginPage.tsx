@@ -72,7 +72,10 @@ export default function LoginPage() {
         } else if (creatorAdminRole?.creatorProfileId) {
           navigate(`/creator-admin/${creatorAdminRole.creatorProfileId}`, { replace: true });
         } else {
-          navigate(from, { replace: true });
+          // Netflix-style: always show "Who's watching?" on a fresh login,
+          // then continue on to the originally requested page.
+          const next = encodeURIComponent(from);
+          navigate(`/profiles/select?next=${next}&force=1`, { replace: true });
         }
       }
     } catch (err: any) {

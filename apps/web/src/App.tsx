@@ -53,6 +53,7 @@ const SecurityPage = lazy(() => import("@/pages/app/SecurityPage"));
 const SettingsPage = lazy(() => import("@/pages/app/SettingsPage"));
 const ProfilesPage = lazy(() => import("@/pages/app/ProfilesPage"));
 const ProfilePickerPage = lazy(() => import("@/pages/app/ProfilePickerPage"));
+const AddProfilePage = lazy(() => import("@/pages/app/AddProfilePage"));
 const ParentalControlsPage = lazy(
   () => import("@/pages/app/ParentalControlsPage"),
 );
@@ -245,6 +246,7 @@ export function App() {
                   path="profiles/select"
                   element={<ProfilePickerPage />}
                 />
+                <Route path="profiles/new" element={<AddProfilePage />} />
                 <Route element={<AppLayout />}>
                   <Route
                     path="checkout/success"

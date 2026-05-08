@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Lock, ShieldCheck, ChevronDown } from "lucide-react";
 import {
+  clearGrace,
   getParentalPinStatus,
-  readGrace,
   verifyParentalPin,
 } from "@/api/pin";
 import { PinPrompt } from "@/components/pin/PinPrompt";
@@ -27,6 +27,7 @@ import {
   type MaturityRating,
   type ParentalControls,
 } from "@/api/parentalControls";
+import { useActiveProfile } from "@/hooks/useActiveProfile";
 import type { Profile } from "@/types";
 
 const PROFILES_KEY = ["profiles", "list"] as const;
@@ -37,22 +38,56 @@ function controlsKey(profileId: string) {
 
 export default function ParentalControlsPage() {
   const qc = useQueryClient();
+  const { activeProfile, setActiveProfile } = useActiveProfile();
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    null,
+    () => activeProfile?.id ?? null,
   );
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [pinPromptOpen, setPinPromptOpen] = useState(false);
-  const [unlocked, setUnlocked] = useState(() => !!readGrace("parental"));
+  // Parental controls are sensitive: never auto-unlock from a cached grace
+  // token (which may have come from a purchase flow or a prior visit). The
+  // editor only opens after an explicit PIN entry on this page, and re-locks
+  // when the user leaves the tab or hits "Lock now".
+  const [unlockedAt, setUnlockedAt] = useState<number | null>(null);
 
   const pinStatusQuery = useQuery({
     queryKey: ["account", "parental-pin", "status"],
     queryFn: getParentalPinStatus,
   });
   const pinIsSet = !!pinStatusQuery.data?.isSet;
-  const isLocked = pinIsSet && !unlocked;
+  const pinStatusLoaded = pinStatusQuery.isSuccess;
+  // Default to LOCKED until we've confirmed there's no PIN set. This avoids
+  // the brief loading window flashing the editor open.
+  const isLocked = !pinStatusLoaded || (pinIsSet && unlockedAt === null);
+
+  function lockNow() {
+    setUnlockedAt(null);
+    clearGrace("parental");
+  }
 
   useEffect(() => {
-    if (!pinIsSet) setUnlocked(true);
+    if (pinStatusLoaded && !pinIsSet) {
+      setUnlockedAt((v) => v ?? Date.now());
+    }
+  }, [pinStatusLoaded, pinIsSet]);
+
+  useEffect(() => {
+    if (!pinIsSet || unlockedAt === null) return;
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        setUnlockedAt(null);
+        clearGrace("parental");
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [pinIsSet, unlockedAt]);
+
+  useEffect(() => {
+    return () => {
+      if (pinIsSet) clearGrace("parental");
+    };
   }, [pinIsSet]);
 
   const { data: profiles = [], isLoading: profilesLoading } = useQuery<
@@ -63,10 +98,15 @@ export default function ParentalControlsPage() {
   });
 
   useEffect(() => {
-    if (!selectedProfileId && profiles.length > 0) {
+    if (selectedProfileId) return;
+    if (activeProfile && profiles.some((p) => p.id === activeProfile.id)) {
+      setSelectedProfileId(activeProfile.id);
+      return;
+    }
+    if (profiles.length > 0) {
       setSelectedProfileId(profiles[0].id);
     }
-  }, [profiles, selectedProfileId]);
+  }, [profiles, selectedProfileId, activeProfile]);
 
   const profile = useMemo(
     () => profiles.find((p) => p.id === selectedProfileId) ?? null,
@@ -104,7 +144,7 @@ export default function ParentalControlsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Parental controls</h1>
           <p className="mt-1 text-sm text-surface-400">
@@ -112,12 +152,33 @@ export default function ParentalControlsPage() {
             automatically.
           </p>
         </div>
-        {savedAt && (
-          <span className="inline-flex items-center gap-1.5 text-sm text-emerald-400">
-            <CheckCircle2 className="h-4 w-4" /> Saved
-          </span>
-        )}
+        <div className="flex flex-col items-end gap-2">
+          {savedAt && (
+            <span className="inline-flex items-center gap-1.5 text-sm text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" /> Saved
+            </span>
+          )}
+          {pinIsSet && unlockedAt !== null && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={lockNow}
+              className="gap-1.5"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              Lock now
+            </Button>
+          )}
+        </div>
       </div>
+
+      {pinIsSet && unlockedAt !== null && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-700/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-100">
+          <ShieldCheck className="h-3.5 w-3.5" />
+          Unlocked for this session — re-locks automatically when you leave or
+          switch tabs.
+        </div>
+      )}
 
       {isLocked ? (
         <Card>
@@ -154,13 +215,18 @@ export default function ParentalControlsPage() {
       ) : (
         <>
           <Card className="mb-6">
-            <CardContent className="flex items-center justify-between gap-4 py-4">
+            <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-wide text-surface-500">
                   Editing controls for
                 </p>
                 <p className="text-base font-medium text-white">
                   {profile?.name ?? "—"}
+                  {profile && activeProfile?.id === profile.id && (
+                    <span className="ml-2 rounded bg-primary-600/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-300">
+                      Currently watching
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="relative">
@@ -173,6 +239,7 @@ export default function ParentalControlsPage() {
                     <option key={p.id} value={p.id}>
                       {p.name}
                       {p.isKidsProfile ? " (Kids)" : ""}
+                      {activeProfile?.id === p.id ? " · watching" : ""}
                     </option>
                   ))}
                 </select>
@@ -180,6 +247,29 @@ export default function ParentalControlsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {profile && activeProfile && profile.id !== activeProfile.id && (
+            <Card className="mb-6 border-amber-700/40 bg-amber-500/5">
+              <CardContent className="flex flex-col gap-3 py-3 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  Heads up — you're editing{" "}
+                  <span className="font-semibold">{profile.name}</span> but
+                  you're currently watching as{" "}
+                  <span className="font-semibold">{activeProfile.name}</span>.
+                  Limits set here only apply once{" "}
+                  <span className="font-semibold">{profile.name}</span> is the
+                  active profile.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setActiveProfile(profile)}
+                >
+                  Watch as {profile.name}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {controlsQuery.isLoading || !controls ? (
             <Spinner />
@@ -362,7 +452,7 @@ export default function ParentalControlsPage() {
         onClose={() => setPinPromptOpen(false)}
         onVerify={async (pin) => {
           await verifyParentalPin(pin);
-          setUnlocked(true);
+          setUnlockedAt(Date.now());
           setPinPromptOpen(false);
           return true;
         }}

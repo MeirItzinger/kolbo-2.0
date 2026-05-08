@@ -1,73 +1,42 @@
-import { useState, useRef, useEffect } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import {
-  Menu,
-  X,
-  User,
-  CreditCard,
-  History,
-  Monitor,
-  LogOut,
-  ChevronDown,
-  Library,
-  Search,
-  Users,
-  Check,
-} from "lucide-react";
+  Link,
+  NavLink,
+  Navigate,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
+import { Menu, X, LogOut, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useActiveProfile } from "@/hooks/useActiveProfile";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
-
-function profileInitials(name: string) {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "?"
-  );
-}
+import { Spinner } from "@/components/ui/Spinner";
+import { ProfileMenu, FULL_ACCOUNT_LINKS } from "@/components/ProfileMenu";
 
 export default function AppLayout() {
-  const { user, logout } = useAuth();
-  const { profiles, activeProfile, setActiveProfile } = useActiveProfile();
+  const { logout } = useAuth();
+  const { activeProfile, isLoading: profilesLoading } = useActiveProfile();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  if (profilesLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-950">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  if (!activeProfile) {
+    const next = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/profiles/select?next=${next}`} replace />;
+  }
 
   const handleLogout = async () => {
-    setDropdownOpen(false);
     await logout();
     navigate("/");
   };
-
-  const initials = user
-    ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase()
-    : "U";
-
-  const accountLinks = [
-    { to: "/account", label: "Account", icon: User },
-    { to: "/account/profiles", label: "Manage Profiles", icon: Users },
-    { to: "/account/subscriptions", label: "Subscriptions", icon: CreditCard },
-    { to: "/account/purchases", label: "Purchases", icon: Library },
-    { to: "/account/history", label: "Watch History", icon: History },
-    { to: "/account/devices", label: "Devices", icon: Monitor },
-  ];
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-950">
@@ -125,108 +94,7 @@ export default function AppLayout() {
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
-            <div className="relative" ref={dropdownRef}>
-              <button
-                type="button"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 rounded-full p-1 transition-colors hover:bg-surface-800"
-              >
-                <Avatar className="h-8 w-8">
-                  {user?.avatarUrl && <AvatarImage src={user.avatarUrl} />}
-                  <AvatarFallback className="text-xs">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="max-w-[120px] truncate text-sm font-medium text-surface-200">
-                  {user?.firstName}
-                </span>
-                <ChevronDown className="h-4 w-4 text-surface-400" />
-              </button>
-
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 rounded-lg border border-surface-700 bg-surface-900 py-1 shadow-xl">
-                  <div className="border-b border-surface-800 px-4 py-3">
-                    <p className="text-sm font-medium text-white">
-                      {user?.firstName} {user?.lastName}
-                    </p>
-                    <p className="truncate text-xs text-surface-400">
-                      {user?.email}
-                    </p>
-                  </div>
-
-                  {profiles.length > 0 && (
-                    <div className="border-b border-surface-800 py-1">
-                      <p className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-surface-500">
-                        Profiles
-                      </p>
-                      {profiles.map((profile) => {
-                        const isActive = activeProfile?.id === profile.id;
-                        return (
-                          <button
-                            key={profile.id}
-                            type="button"
-                            onClick={() => {
-                              setActiveProfile(profile);
-                              setDropdownOpen(false);
-                            }}
-                            className={`flex w-full items-center gap-3 px-4 py-2 text-sm transition-colors ${
-                              isActive
-                                ? "bg-surface-800/60 text-white"
-                                : "text-surface-300 hover:bg-surface-800 hover:text-white"
-                            }`}
-                          >
-                            <Avatar className="h-6 w-6">
-                              {profile.avatarUrl ? (
-                                <AvatarImage src={profile.avatarUrl} />
-                              ) : null}
-                              <AvatarFallback className="text-[10px]">
-                                {profileInitials(profile.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="flex-1 truncate text-left">
-                              {profile.name}
-                            </span>
-                            {isActive && (
-                              <Check className="h-3.5 w-3.5 text-primary-400" />
-                            )}
-                          </button>
-                        );
-                      })}
-                      <Link
-                        to="/profiles/select?force=1"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-surface-400 hover:bg-surface-800 hover:text-white"
-                      >
-                        <Users className="h-4 w-4" />
-                        Switch profile…
-                      </Link>
-                    </div>
-                  )}
-
-                  {accountLinks.map((link) => (
-                    <Link
-                      key={link.to}
-                      to={link.to}
-                      onClick={() => setDropdownOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
-                    >
-                      <link.icon className="h-4 w-4" />
-                      {link.label}
-                    </Link>
-                  ))}
-                  <div className="border-t border-surface-800">
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="flex w-full items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      Log Out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <ProfileMenu accountLinks={FULL_ACCOUNT_LINKS} />
           </div>
 
           <button
@@ -267,7 +135,22 @@ export default function AppLayout() {
               My Library
             </NavLink>
             <div className="border-t border-surface-800 pt-2">
-              {accountLinks.map((link) => (
+              {activeProfile && (
+                <div className="mx-1 mb-2 rounded-md bg-surface-900 px-3 py-2 text-xs text-surface-400">
+                  Watching as{" "}
+                  <span className="font-semibold text-white">
+                    {activeProfile.name}
+                  </span>
+                </div>
+              )}
+              <Link
+                to="/profiles/select?force=1"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-surface-300 hover:bg-surface-800 hover:text-white"
+              >
+                Switch profile…
+              </Link>
+              {FULL_ACCOUNT_LINKS.map((link) => (
                 <Link
                   key={link.to}
                   to={link.to}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, AlertTriangle, Lock, Clock, Moon } from "lucide-react";
@@ -31,26 +31,44 @@ interface AdData {
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
-async function getPlaybackToken(videoId: string): Promise<PlaybackData> {
+async function getPlaybackToken(
+  videoId: string,
+  profileId?: string | null,
+): Promise<PlaybackData> {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   const uscreenToken = getUscreenAccessToken();
   if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
-  const { data } = await axios.get(`${API_BASE}/playback/token/${videoId}`, { headers });
+  const params = profileId ? { profileId } : undefined;
+  const { data } = await axios.get(`${API_BASE}/playback/token/${videoId}`, {
+    headers,
+    params,
+  });
   return data?.data ?? data;
 }
 
-async function getPrerollAd(videoId: string): Promise<AdData | null> {
+async function getPrerollAd(
+  videoId: string,
+  profileId?: string | null,
+): Promise<AdData | null> {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   const uscreenToken = getUscreenAccessToken();
   if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
+  const params = profileId ? { profileId } : undefined;
   const { data } = await axios.get(`${API_BASE}/playback/ad/${videoId}`, {
     headers,
+    params,
   });
   return data?.data ?? null;
+}
+
+interface ParentalServerBlock {
+  reason: "OUTSIDE_HOURS" | "MATURITY" | "TIME_LIMIT";
+  message: string;
+  details?: Record<string, unknown>;
 }
 
 async function sendHeartbeat(sessionId: string): Promise<void> {
@@ -87,18 +105,49 @@ export default function WatchPage() {
 
   const { activeProfile, parentalControls } = useActiveProfile();
   const watchTime = useWatchTimeLimit(activeProfile?.id, parentalControls);
-  const blockedByTime = watchTime.isOver;
-  const blockedByHours = watchTime.isOutsideAllowedHours;
+  const [heartbeatBlock, setHeartbeatBlock] = useState<ParentalServerBlock | null>(
+    null,
+  );
+  useEffect(() => {
+    setHeartbeatBlock(null);
+  }, [activeProfile?.id, video?.id]);
 
   const tokenQuery = useQuery({
-    queryKey: ["playback-token", video?.id],
-    queryFn: () => getPlaybackToken(video!.id),
+    queryKey: ["playback-token", video?.id, activeProfile?.id],
+    queryFn: () => getPlaybackToken(video!.id, activeProfile?.id),
     enabled: !!video?.id,
+    retry: (failureCount, err) => {
+      if (axios.isAxiosError(err) && err.response?.status === 403) return false;
+      return failureCount < 2;
+    },
   });
 
+  const tokenParentalBlock = useMemo<ParentalServerBlock | null>(() => {
+    const err = tokenQuery.error;
+    if (
+      axios.isAxiosError(err) &&
+      err.response?.status === 403 &&
+      err.response.data?.code === "PARENTAL_BLOCKED"
+    ) {
+      return {
+        reason: err.response.data.reason,
+        message: err.response.data.message,
+        details: err.response.data.details,
+      };
+    }
+    return null;
+  }, [tokenQuery.error]);
+
+  const serverBlock = heartbeatBlock ?? tokenParentalBlock;
+  const blockedByTime =
+    watchTime.isOver || serverBlock?.reason === "TIME_LIMIT";
+  const blockedByHours =
+    watchTime.isOutsideAllowedHours || serverBlock?.reason === "OUTSIDE_HOURS";
+  const blockedByServerMaturity = serverBlock?.reason === "MATURITY";
+
   const adQuery = useQuery({
-    queryKey: ["preroll-ad", video?.id, adNonce.current],
-    queryFn: () => getPrerollAd(video!.id),
+    queryKey: ["preroll-ad", video?.id, activeProfile?.id, adNonce.current],
+    queryFn: () => getPrerollAd(video!.id, activeProfile?.id),
     /** Wait for playback token so adMode matches the same access decision (avoids racing preroll before token). */
     enabled:
       !!video?.id &&
@@ -122,7 +171,21 @@ export default function WatchPage() {
   }, []);
 
   const handleHeartbeat = useCallback(() => {
-    if (sessionId) sendHeartbeat(sessionId).catch(() => {});
+    if (!sessionId) return;
+    sendHeartbeat(sessionId).catch((err) => {
+      if (
+        axios.isAxiosError(err) &&
+        err.response?.status === 403 &&
+        err.response.data?.code === "PARENTAL_BLOCKED"
+      ) {
+        setHeartbeatBlock({
+          reason: err.response.data.reason,
+          message: err.response.data.message,
+          details: err.response.data.details,
+        });
+        sessionEndedRef.current = true;
+      }
+    });
   }, [sessionId]);
 
   const handleEnd = useCallback(() => {
@@ -193,7 +256,10 @@ export default function WatchPage() {
   }
 
   if (video && blockedByTime) {
-    const limit = parentalControls?.dailyTimeLimitMinutes ?? 0;
+    const limit =
+      (serverBlock?.details?.dailyTimeLimitMinutes as number | undefined) ??
+      parentalControls?.dailyTimeLimitMinutes ??
+      0;
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-black px-4">
         <Clock className="mb-4 h-12 w-12 text-warning" />
@@ -221,7 +287,13 @@ export default function WatchPage() {
     );
   }
 
-  if (video && blockedByMaturity) {
+  if (video && (blockedByMaturity || blockedByServerMaturity)) {
+    const serverCap = serverBlock?.details?.maxMaturityRating as
+      | string
+      | undefined;
+    const serverVideoRating = serverBlock?.details?.videoMaturityRating as
+      | string
+      | undefined;
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-black px-4">
         <Lock className="mb-4 h-12 w-12 text-warning" />
@@ -231,13 +303,16 @@ export default function WatchPage() {
         <p className="mb-1 text-center text-surface-400">
           This title is rated{" "}
           <span className="font-semibold text-white">
-            {video.maturityRating ?? "NR"}
+            {serverVideoRating ?? video.maturityRating ?? "NR"}
           </span>
           .
         </p>
         <p className="mb-6 text-center text-surface-400">
           Active profile only allows up to{" "}
-          <span className="font-semibold text-white">{activeRatingCap}</span>.
+          <span className="font-semibold text-white">
+            {serverCap ?? activeRatingCap}
+          </span>
+          .
         </p>
         <div className="flex gap-3">
           <Button asChild variant="outline">

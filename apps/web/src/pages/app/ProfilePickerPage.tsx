@@ -91,7 +91,7 @@ export default function ProfilePickerPage() {
           ))}
 
           <Link
-            to="/account/profiles"
+            to={`/profiles/new?next=${encodeURIComponent(next)}`}
             className="flex flex-col items-center gap-3 rounded-lg p-2 text-surface-400 transition-colors hover:text-white"
           >
             <div className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-surface-700 group-hover:border-primary-500">

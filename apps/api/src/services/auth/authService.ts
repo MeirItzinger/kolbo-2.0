@@ -15,6 +15,7 @@ import {
   sendInviteEmail,
 } from "../../lib/email";
 import { ApiError } from "../../utils/apiError";
+import { ensureDefaultProfile } from "../profile/profileService";
 
 const SALT_ROUNDS = 12;
 const EMAIL_TOKEN_EXPIRY_HOURS = 24;
@@ -94,6 +95,9 @@ export async function signup(
       where: { id: created.id },
       data: { stripeCustomerId: stripeCustomer.id },
     });
+
+    // Netflix-style default: every new account starts with one profile.
+    await ensureDefaultProfile(created.id, firstName, tx);
 
     if (process.env.NODE_ENV === "production") {
       const rawToken = generateToken();
@@ -186,6 +190,9 @@ export async function login(email: string, password: string) {
       "Please verify your email before logging in"
     );
   }
+
+  // Backfill: legacy accounts created before profiles existed.
+  await ensureDefaultProfile(user.id, user.firstName);
 
   const accessToken = signAccessToken({ sub: user.id, email: user.email });
   const refreshToken = signRefreshToken({ sub: user.id, email: user.email });
@@ -617,6 +624,8 @@ export async function acceptInvite(
       data: { expiresAt: new Date() },
     });
 
+    await ensureDefaultProfile(updated.id, updated.firstName, tx);
+
     return updated;
   });
 
@@ -748,6 +757,20 @@ export async function getCurrentUser(userId: string) {
 
   if (!user) {
     throw ApiError.notFound("User not found");
+  }
+
+  if (user.profiles.length === 0) {
+    const created = await ensureDefaultProfile(user.id, user.firstName);
+    if (created) {
+      user.profiles = [
+        {
+          id: created.id,
+          name: created.name,
+          avatarUrl: created.avatarUrl ?? null,
+          isKidsProfile: created.isKidsProfile,
+        },
+      ];
+    }
   }
 
   return user;

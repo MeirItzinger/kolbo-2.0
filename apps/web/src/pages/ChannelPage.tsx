@@ -2,13 +2,19 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import axios from "axios";
-import { createCheckoutRental, createCheckoutPurchase } from "@/api/stripe";
+import {
+  createCheckoutRental,
+  createCheckoutPurchase,
+  isPurchasesBlockedError,
+} from "@/api/stripe";
+import { PurchasesBlockedNotice } from "@/components/PurchasesBlockedNotice";
 import {
   Play,
   Tv,
   CheckCircle,
   Lock,
   Clock,
+  Moon,
   LogIn,
   UserPlus,
   ChevronLeft,
@@ -21,6 +27,9 @@ import { getChannel, getChannelPageElements, getChannelCategories } from "@/api/
 import { listVideos, getVideo } from "@/api/videos";
 import { api, resolveUploadedAssetUrl, getUscreenAccessToken } from "@/api/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveProfile } from "@/hooks/useActiveProfile";
+import { useWatchTimeLimit } from "@/hooks/useWatchTimeLimit";
+import { useMaturityFilter } from "@/hooks/useMaturityFilter";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
@@ -451,6 +460,7 @@ export default function ChannelPage() {
               videoId={detailData.id}
               playbackId={playbackId}
               title={detailData.title ?? ""}
+              maturityRating={detailData.maturityRating ?? null}
             />
           ) : hasAccess && !playbackId ? (
             <VideoProcessing title={detailData?.title ?? "this video"} />
@@ -800,62 +810,205 @@ function AuthPrompt({ videoTitle }: { videoTitle: string }) {
 
 const PLAYBACK_API_BASE = import.meta.env.VITE_API_URL || "/api";
 
-async function fetchPlaybackTokenForModal(videoId: string) {
+async function fetchPlaybackTokenForModal(
+  videoId: string,
+  profileId?: string | null,
+) {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   const uscreenToken = getUscreenAccessToken();
   if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
+  const params = profileId ? { profileId } : undefined;
   const { data } = await axios.get(
     `${PLAYBACK_API_BASE}/playback/token/${videoId}`,
-    { headers },
+    { headers, params },
   );
   return data?.data ?? data;
 }
 
-async function fetchPrerollAdForModal(videoId: string) {
+async function fetchPrerollAdForModal(
+  videoId: string,
+  profileId?: string | null,
+) {
   const token = localStorage.getItem("kolbo_access_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   const uscreenToken = getUscreenAccessToken();
   if (uscreenToken) headers["X-Uscreen-Access-Token"] = uscreenToken;
+  const params = profileId ? { profileId } : undefined;
   const { data } = await axios.get(
     `${PLAYBACK_API_BASE}/playback/ad/${videoId}`,
-    { headers },
+    { headers, params },
   );
   return data?.data ?? null;
+}
+
+interface ParentalServerBlock {
+  reason: "OUTSIDE_HOURS" | "MATURITY" | "TIME_LIMIT";
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+function formatHourLabel(h: number): string {
+  if (!Number.isFinite(h)) return "—";
+  const hh = String(Math.floor(h) % 24).padStart(2, "0");
+  return `${hh}:00`;
+}
+
+function ChannelParentalBlock({
+  block,
+  profileName,
+  fallbackLimitMinutes,
+  fallbackHours,
+  fallbackCap,
+  videoMaturityRating,
+}: {
+  block: { reason: ParentalServerBlock["reason"]; details?: Record<string, unknown> };
+  profileName?: string;
+  fallbackLimitMinutes?: number | null;
+  fallbackHours?: { start: number; end: number } | null;
+  fallbackCap?: string;
+  videoMaturityRating?: string | null;
+}) {
+  const who = profileName ?? "This profile";
+  if (block.reason === "OUTSIDE_HOURS") {
+    const hours =
+      (block.details?.allowedHours as { start: number; end: number } | undefined) ??
+      fallbackHours;
+    return (
+      <div className="flex flex-col items-center gap-3 p-8 text-center">
+        <Moon className="h-10 w-10 text-warning" />
+        <h3 className="text-lg font-semibold text-white">
+          Outside allowed hours
+        </h3>
+        <p className="max-w-sm text-sm text-surface-400">
+          {hours
+            ? `${who} can watch between ${formatHourLabel(hours.start)} and ${formatHourLabel(hours.end)}.`
+            : `${who} is currently outside its allowed watch window.`}
+        </p>
+      </div>
+    );
+  }
+  if (block.reason === "TIME_LIMIT") {
+    const limit =
+      (block.details?.dailyTimeLimitMinutes as number | undefined) ??
+      fallbackLimitMinutes ??
+      0;
+    return (
+      <div className="flex flex-col items-center gap-3 p-8 text-center">
+        <Clock className="h-10 w-10 text-warning" />
+        <h3 className="text-lg font-semibold text-white">
+          Time&apos;s up for today
+        </h3>
+        <p className="max-w-sm text-sm text-surface-400">
+          {who} has reached today&apos;s{" "}
+          <span className="font-semibold text-white">{limit} min</span> watch limit.
+        </p>
+        <p className="text-xs text-surface-500">
+          The budget refreshes at midnight.
+        </p>
+      </div>
+    );
+  }
+  // MATURITY
+  const cap =
+    (block.details?.maxMaturityRating as string | undefined) ?? fallbackCap;
+  const rating =
+    (block.details?.videoMaturityRating as string | undefined) ??
+    videoMaturityRating ??
+    "NR";
+  return (
+    <div className="flex flex-col items-center gap-3 p-8 text-center">
+      <Lock className="h-10 w-10 text-warning" />
+      <h3 className="text-lg font-semibold text-white">
+        Blocked by parental controls
+      </h3>
+      <p className="max-w-sm text-sm text-surface-400">
+        This title is rated{" "}
+        <span className="font-semibold text-white">{rating}</span>. {who} only
+        allows up to{" "}
+        <span className="font-semibold text-white">{cap ?? "G"}</span>.
+      </p>
+    </div>
+  );
 }
 
 function ChannelModalPlayer({
   videoId,
   playbackId: fallbackPlaybackId,
   title,
+  maturityRating,
 }: {
   videoId: string;
   playbackId: string;
   title: string;
+  maturityRating: string | null;
 }) {
   const [showingAd, setShowingAd] = useState(true);
   const sessionEndedRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
 
+  const { activeProfile, parentalControls } = useActiveProfile();
+  const watchTime = useWatchTimeLimit(activeProfile?.id, parentalControls);
+  const { isAllowed: isMaturityAllowed, activeRatingCap } = useMaturityFilter();
+
+  const blockedByLocalMaturity = !isMaturityAllowed({ maturityRating });
+
+  const [heartbeatBlock, setHeartbeatBlock] = useState<ParentalServerBlock | null>(
+    null,
+  );
+
   useEffect(() => {
     setShowingAd(true);
     sessionEndedRef.current = false;
-  }, [videoId]);
+    setHeartbeatBlock(null);
+  }, [videoId, activeProfile?.id]);
 
   const tokenQuery = useQuery({
-    queryKey: ["playback-token", "modal", videoId],
-    queryFn: () => fetchPlaybackTokenForModal(videoId),
+    queryKey: ["playback-token", "modal", videoId, activeProfile?.id],
+    queryFn: () => fetchPlaybackTokenForModal(videoId, activeProfile?.id),
+    enabled: !blockedByLocalMaturity,
+    retry: (failureCount, err) => {
+      if (axios.isAxiosError(err) && err.response?.status === 403) return false;
+      return failureCount < 2;
+    },
   });
+
+  const tokenParentalBlock = useMemo<ParentalServerBlock | null>(() => {
+    const err = tokenQuery.error;
+    if (
+      axios.isAxiosError(err) &&
+      err.response?.status === 403 &&
+      err.response.data?.code === "PARENTAL_BLOCKED"
+    ) {
+      return {
+        reason: err.response.data.reason,
+        message: err.response.data.message,
+        details: err.response.data.details,
+      };
+    }
+    return null;
+  }, [tokenQuery.error]);
+
+  const serverBlock = heartbeatBlock ?? tokenParentalBlock;
+
+  const blockedByTime =
+    watchTime.isOver || serverBlock?.reason === "TIME_LIMIT";
+  const blockedByHours =
+    watchTime.isOutsideAllowedHours || serverBlock?.reason === "OUTSIDE_HOURS";
+  const blockedByMaturity =
+    blockedByLocalMaturity || serverBlock?.reason === "MATURITY";
+  const isBlocked = blockedByTime || blockedByHours || blockedByMaturity;
 
   const adNonce = useRef(0);
   useEffect(() => { adNonce.current++; }, [videoId]);
 
   const adQuery = useQuery({
-    queryKey: ["preroll-ad", "modal", videoId, adNonce.current],
-    queryFn: () => fetchPrerollAdForModal(videoId),
+    queryKey: ["preroll-ad", "modal", videoId, activeProfile?.id, adNonce.current],
+    queryFn: () => fetchPrerollAdForModal(videoId, activeProfile?.id),
     enabled:
+      !isBlocked &&
       tokenQuery.isSuccess &&
       tokenQuery.data?.adMode !== "none",
     staleTime: 0,
@@ -872,9 +1025,21 @@ function ChannelModalPlayer({
 
   const handleHeartbeat = useCallback(() => {
     const sid = sessionIdRef.current;
-    if (sid) {
-      api.post("/watch-sessions/heartbeat", { sessionId: sid }).catch(() => {});
-    }
+    if (!sid) return;
+    api.post("/watch-sessions/heartbeat", { sessionId: sid }).catch((err) => {
+      if (
+        axios.isAxiosError(err) &&
+        err.response?.status === 403 &&
+        err.response.data?.code === "PARENTAL_BLOCKED"
+      ) {
+        setHeartbeatBlock({
+          reason: err.response.data.reason,
+          message: err.response.data.message,
+          details: err.response.data.details,
+        });
+        sessionEndedRef.current = true;
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -898,6 +1063,38 @@ function ChannelModalPlayer({
       }
     };
   }, []);
+
+  // Tick the per-profile daily watch budget every second while content is on-screen.
+  const watchIncrementRef = useRef(watchTime.increment);
+  watchIncrementRef.current = watchTime.increment;
+  const shouldCountTime =
+    !isBlocked && !showingAd && tokenQuery.isSuccess && !!activeProfile?.id;
+  useEffect(() => {
+    if (!shouldCountTime) return;
+    const id = setInterval(() => watchIncrementRef.current(1), 1000);
+    return () => clearInterval(id);
+  }, [shouldCountTime]);
+
+  if (isBlocked) {
+    const block = serverBlock ?? {
+      reason: blockedByTime
+        ? ("TIME_LIMIT" as const)
+        : blockedByHours
+          ? ("OUTSIDE_HOURS" as const)
+          : ("MATURITY" as const),
+      details: undefined,
+    };
+    return (
+      <ChannelParentalBlock
+        block={block}
+        profileName={activeProfile?.name}
+        fallbackLimitMinutes={parentalControls?.dailyTimeLimitMinutes ?? null}
+        fallbackHours={parentalControls?.allowedHours ?? null}
+        fallbackCap={activeRatingCap}
+        videoMaturityRating={maturityRating}
+      />
+    );
+  }
 
   if (tokenQuery.isLoading) {
     return (
@@ -994,39 +1191,74 @@ function PaywallPrompt({
   channelSlug: string;
   plans: SubscriptionPlan[];
 }) {
+  const { activeProfile, parentalControls } = useActiveProfile();
+  const purchasesAllowed = parentalControls?.allowPurchases !== false;
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [blockedName, setBlockedName] = useState<string | null>(null);
 
-  const handleRent = useCallback(async (rentalOptionId: string) => {
-    setLoadingId(rentalOptionId);
-    try {
-      const { url } = await createCheckoutRental({
-        rentalOptionId,
-        successUrl: `${window.location.origin}/channels/${channelSlug}?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: window.location.href,
-      });
-      if (url) window.location.href = url;
-    } catch (err: any) {
-      alert(err?.response?.data?.message ?? "Failed to start checkout");
-    } finally {
-      setLoadingId(null);
-    }
-  }, [channelSlug]);
+  const handleRent = useCallback(
+    async (rentalOptionId: string) => {
+      if (!purchasesAllowed) {
+        setBlockedName(activeProfile?.name ?? null);
+        return;
+      }
+      setLoadingId(rentalOptionId);
+      try {
+        const { url } = await createCheckoutRental({
+          rentalOptionId,
+          successUrl: `${window.location.origin}/channels/${channelSlug}?session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: window.location.href,
+          profileId: activeProfile?.id ?? null,
+        });
+        if (url) window.location.href = url;
+      } catch (err: any) {
+        if (isPurchasesBlockedError(err)) {
+          setBlockedName(
+            err.response.data.details.profileName ??
+              activeProfile?.name ??
+              null,
+          );
+          return;
+        }
+        alert(err?.response?.data?.message ?? "Failed to start checkout");
+      } finally {
+        setLoadingId(null);
+      }
+    },
+    [channelSlug, purchasesAllowed, activeProfile?.id, activeProfile?.name],
+  );
 
-  const handlePurchase = useCallback(async (purchaseOptionId: string) => {
-    setLoadingId(purchaseOptionId);
-    try {
-      const { url } = await createCheckoutPurchase({
-        purchaseOptionId,
-        successUrl: `${window.location.origin}/channels/${channelSlug}?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: window.location.href,
-      });
-      if (url) window.location.href = url;
-    } catch (err: any) {
-      alert(err?.response?.data?.message ?? "Failed to start checkout");
-    } finally {
-      setLoadingId(null);
-    }
-  }, [channelSlug]);
+  const handlePurchase = useCallback(
+    async (purchaseOptionId: string) => {
+      if (!purchasesAllowed) {
+        setBlockedName(activeProfile?.name ?? null);
+        return;
+      }
+      setLoadingId(purchaseOptionId);
+      try {
+        const { url } = await createCheckoutPurchase({
+          purchaseOptionId,
+          successUrl: `${window.location.origin}/channels/${channelSlug}?session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: window.location.href,
+          profileId: activeProfile?.id ?? null,
+        });
+        if (url) window.location.href = url;
+      } catch (err: any) {
+        if (isPurchasesBlockedError(err)) {
+          setBlockedName(
+            err.response.data.details.profileName ??
+              activeProfile?.name ??
+              null,
+          );
+          return;
+        }
+        alert(err?.response?.data?.message ?? "Failed to start checkout");
+      } finally {
+        setLoadingId(null);
+      }
+    },
+    [channelSlug, purchasesAllowed, activeProfile?.id, activeProfile?.name],
+  );
 
   const planRows = plans.flatMap((plan) =>
     (plan.priceVariants ?? [])
@@ -1045,6 +1277,13 @@ function PaywallPrompt({
           This content requires a subscription. Choose a plan to start watching.
         </DialogDescription>
       </DialogHeader>
+
+      {(!purchasesAllowed || blockedName !== null) && (
+        <PurchasesBlockedNotice
+          profileName={blockedName ?? activeProfile?.name ?? null}
+          className="mt-3"
+        />
+      )}
 
       {planRows.length > 0 && (
         <div className="mt-2 space-y-3">
@@ -1065,13 +1304,19 @@ function PaywallPrompt({
                     {variant.adTier === "WITH_ADS" ? " · ads" : ""}
                   </p>
                 </div>
-                <Button size="sm" asChild>
-                  <Link
-                    to={`/pricing/${channelSlug}?variant=${encodeURIComponent(variant.id)}`}
-                  >
-                    Subscribe
-                  </Link>
-                </Button>
+                {purchasesAllowed ? (
+                  <Button size="sm" asChild>
+                    <Link
+                      to={`/pricing/${channelSlug}?variant=${encodeURIComponent(variant.id)}`}
+                    >
+                      Subscribe
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button size="sm" disabled>
+                    Purchases off
+                  </Button>
+                )}
               </div>
             );
           })}
@@ -1098,10 +1343,14 @@ function PaywallPrompt({
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={loadingId === r.id}
+                disabled={loadingId === r.id || !purchasesAllowed}
                 onClick={() => handleRent(r.id)}
               >
-                {loadingId === r.id ? <Spinner size="sm" /> : "Rent"}
+                {loadingId === r.id
+                  ? <Spinner size="sm" />
+                  : !purchasesAllowed
+                  ? "Off"
+                  : "Rent"}
               </Button>
             </div>
           ))}
@@ -1127,10 +1376,14 @@ function PaywallPrompt({
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={loadingId === p.id}
+                disabled={loadingId === p.id || !purchasesAllowed}
                 onClick={() => handlePurchase(p.id)}
               >
-                {loadingId === p.id ? <Spinner size="sm" /> : "Buy"}
+                {loadingId === p.id
+                  ? <Spinner size="sm" />
+                  : !purchasesAllowed
+                  ? "Off"
+                  : "Buy"}
               </Button>
             </div>
           ))}

@@ -6,6 +6,40 @@ import { env } from "../config/env";
 import * as stripeService from "../services/stripe/stripeService";
 import { handleWebhookEvent } from "../services/stripe/stripeWebhookService";
 import { prisma } from "../lib/prisma";
+import {
+  assertProfileCanPurchase,
+  isParentalBlockedError,
+} from "../services/profile/parentalControlsService";
+
+function profileIdFromRequest(req: Request): string | undefined {
+  const fromBody =
+    typeof req.body?.profileId === "string" ? req.body.profileId.trim() : "";
+  if (fromBody) return fromBody;
+  const fromHeader = req.headers["x-active-profile-id"];
+  if (typeof fromHeader === "string" && fromHeader.trim()) {
+    return fromHeader.trim();
+  }
+  return undefined;
+}
+
+async function gateCheckout(req: Request, res: Response): Promise<boolean> {
+  try {
+    await assertProfileCanPurchase(req.user!.id, profileIdFromRequest(req));
+    return true;
+  } catch (err) {
+    if (isParentalBlockedError(err)) {
+      res.status(403).json({
+        status: "error",
+        code: err.code,
+        reason: err.reason,
+        message: err.message,
+        details: err.details,
+      });
+      return false;
+    }
+    throw err;
+  }
+}
 
 export const createCheckoutForSubscription = asyncHandler(
   async (req: Request, res: Response) => {
@@ -14,6 +48,8 @@ export const createCheckoutForSubscription = asyncHandler(
     if (!variantId || !successUrl || !cancelUrl) {
       throw ApiError.badRequest("variantId, successUrl, and cancelUrl are required");
     }
+
+    if (!(await gateCheckout(req, res))) return;
 
     const session = await stripeService.createCheckoutSessionForSubscription(
       req.user!.id,
@@ -35,6 +71,8 @@ export const createCheckoutForMultiSubscription = asyncHandler(
       throw ApiError.badRequest("items (non-empty array), successUrl, and cancelUrl are required");
     }
 
+    if (!(await gateCheckout(req, res))) return;
+
     const session = await stripeService.createCheckoutSessionForMultiSubscription(
       req.user!.id,
       items,
@@ -54,6 +92,8 @@ export const createCheckoutForBundle = asyncHandler(
     if (!bundleId || !successUrl || !cancelUrl) {
       throw ApiError.badRequest("bundleId, successUrl, and cancelUrl are required");
     }
+
+    if (!(await gateCheckout(req, res))) return;
 
     const session = await stripeService.createCheckoutSessionForBundle(
       req.user!.id,
@@ -77,6 +117,8 @@ export const createCheckoutForRental = asyncHandler(
       );
     }
 
+    if (!(await gateCheckout(req, res))) return;
+
     const session = await stripeService.createCheckoutSessionForRental(
       req.user!.id,
       rentalOptionId,
@@ -97,6 +139,8 @@ export const createCheckoutForPurchase = asyncHandler(
         "purchaseOptionId, successUrl, and cancelUrl are required"
       );
     }
+
+    if (!(await gateCheckout(req, res))) return;
 
     const session = await stripeService.createCheckoutSessionForPurchase(
       req.user!.id,

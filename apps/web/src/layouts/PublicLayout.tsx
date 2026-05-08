@@ -1,36 +1,27 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Menu, X, User, LogOut, ChevronDown, Shield, Megaphone, Search } from "lucide-react";
+import { Menu, X, Megaphone, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveProfile } from "@/hooks/useActiveProfile";
 import { Button } from "@/components/ui/Button";
-import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
+import {
+  ProfileMenu,
+  FULL_ACCOUNT_LINKS,
+  AdminPanelLink,
+} from "@/components/ProfileMenu";
 
 export default function PublicLayout() {
-  const { user, isAuthenticated, logout, hasRole } = useAuth();
+  const { isAuthenticated, logout, hasRole } = useAuth();
+  const { activeProfile } = useActiveProfile();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
 
   const handleLogout = async () => {
-    setDropdownOpen(false);
     await logout();
     navigate("/");
   };
 
-  const initials = user
-    ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase()
-    : "U";
+  const isAdmin = hasRole("SUPER_ADMIN") || hasRole("CHANNEL_ADMIN");
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-950">
@@ -96,70 +87,10 @@ export default function PublicLayout() {
               Advertise with Kolbo
             </Link>
             {isAuthenticated ? (
-              <div className="relative" ref={dropdownRef}>
-                <button
-                  type="button"
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center gap-2 rounded-full p-1 transition-colors hover:bg-surface-800"
-                >
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-                  </Avatar>
-                  <span className="max-w-[120px] truncate text-sm font-medium text-surface-200">
-                    {user?.firstName}
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-surface-400" />
-                </button>
-
-                {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-lg border border-surface-700 bg-surface-900 py-1 shadow-xl">
-                    <div className="border-b border-surface-800 px-4 py-3">
-                      <p className="text-sm font-medium text-white">
-                        {user?.firstName} {user?.lastName}
-                      </p>
-                      <p className="truncate text-xs text-surface-400">{user?.email}</p>
-                    </div>
-                    <Link
-                      to="/account"
-                      onClick={() => setDropdownOpen(false)}
-                      className="flex items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
-                    >
-                      <User className="h-4 w-4" />
-                      Account
-                    </Link>
-                    {hasRole("SUPER_ADMIN") && (
-                      <Link
-                        to="/admin"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
-                      >
-                        <Shield className="h-4 w-4" />
-                        Admin Panel
-                      </Link>
-                    )}
-                    {hasRole("CHANNEL_ADMIN") && !hasRole("SUPER_ADMIN") && (
-                      <Link
-                        to="/admin"
-                        onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
-                      >
-                        <Shield className="h-4 w-4" />
-                        Admin Panel
-                      </Link>
-                    )}
-                    <div className="border-t border-surface-800">
-                      <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-sm text-surface-300 transition-colors hover:bg-surface-800 hover:text-white"
-                      >
-                        <LogOut className="h-4 w-4" />
-                        Log Out
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <ProfileMenu
+                accountLinks={FULL_ACCOUNT_LINKS}
+                extraTop={isAdmin ? <AdminPanelLink /> : null}
+              />
             ) : (
               <>
                 <Button variant="ghost" size="sm" asChild>
@@ -222,6 +153,22 @@ export default function PublicLayout() {
             <div className="flex flex-col gap-2 border-t border-surface-800 pt-2">
               {isAuthenticated ? (
                 <>
+                  {activeProfile && (
+                    <div className="rounded-md bg-surface-900 px-3 py-2 text-xs text-surface-400">
+                      Watching as{" "}
+                      <span className="font-semibold text-white">
+                        {activeProfile.name}
+                      </span>
+                    </div>
+                  )}
+                  <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
+                    <Link
+                      to="/profiles/select?force=1"
+                      onClick={() => setMobileOpen(false)}
+                    >
+                      Switch profile…
+                    </Link>
+                  </Button>
                   <Button variant="ghost" size="sm" className="w-full justify-start" asChild>
                     <Link to="/account" onClick={() => setMobileOpen(false)}>Account</Link>
                   </Button>

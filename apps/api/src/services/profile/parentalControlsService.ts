@@ -137,3 +137,205 @@ export function maturityRank(rating: MaturityRating): number {
       return 99;
   }
 }
+
+function startOfTodayUtc(now: Date = new Date()): Date {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0),
+  );
+}
+
+function isOutsideAllowedHours(
+  range: { start: number; end: number } | null,
+  now: Date = new Date(),
+): boolean {
+  if (!range) return false;
+  const { start, end } = range;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
+  const startMin = start * 60;
+  const endMin = end * 60;
+  if (startMin === endMin) return false; // 24h allow
+  if (startMin < endMin) {
+    return minutesNow < startMin || minutesNow >= endMin;
+  }
+  // Overnight window, e.g. 20:00 → 06:00
+  return minutesNow >= endMin && minutesNow < startMin;
+}
+
+/**
+ * Sums "watched seconds today" for a profile. We use `playbackSeconds` when
+ * present (heartbeat keeps it fresh) and otherwise fall back to wall-clock
+ * since `startedAt`, capped by `endedAt`/`lastHeartbeatAt`. `excludeSessionId`
+ * lets the caller add the live elapsed time for the session being processed
+ * separately so the same seconds aren't counted twice.
+ */
+export async function sumWatchedSecondsToday(
+  profileId: string,
+  excludeSessionId?: string,
+): Promise<number> {
+  const sessions = await prisma.watchSession.findMany({
+    where: {
+      profileId,
+      startedAt: { gte: startOfTodayUtc() },
+      ...(excludeSessionId ? { id: { not: excludeSessionId } } : {}),
+    },
+    select: {
+      startedAt: true,
+      endedAt: true,
+      lastHeartbeatAt: true,
+      playbackSeconds: true,
+    },
+  });
+
+  let total = 0;
+  for (const s of sessions) {
+    if (typeof s.playbackSeconds === "number" && s.playbackSeconds > 0) {
+      total += s.playbackSeconds;
+      continue;
+    }
+    const end = s.endedAt ?? s.lastHeartbeatAt;
+    const elapsed = Math.max(0, Math.floor((end.getTime() - s.startedAt.getTime()) / 1000));
+    total += elapsed;
+  }
+  return total;
+}
+
+export type ParentalBlockReason =
+  | "OUTSIDE_HOURS"
+  | "MATURITY"
+  | "TIME_LIMIT"
+  | "PURCHASES";
+
+export interface ParentalBlockedError extends Error {
+  statusCode: 403;
+  code: "PARENTAL_BLOCKED";
+  reason: ParentalBlockReason;
+  details: {
+    maxMaturityRating?: MaturityRating;
+    videoMaturityRating?: string | null;
+    allowedHours?: { start: number; end: number };
+    dailyTimeLimitMinutes?: number;
+    secondsUsed?: number;
+    profileName?: string;
+  };
+}
+
+function blocked(
+  reason: ParentalBlockReason,
+  message: string,
+  details: ParentalBlockedError["details"],
+): ParentalBlockedError {
+  const err = new Error(message) as ParentalBlockedError;
+  err.statusCode = 403;
+  err.code = "PARENTAL_BLOCKED";
+  err.reason = reason;
+  err.details = details;
+  return err;
+}
+
+export function isParentalBlockedError(
+  err: unknown,
+): err is ParentalBlockedError {
+  return !!err && typeof err === "object" && (err as { code?: unknown }).code === "PARENTAL_BLOCKED";
+}
+
+interface AssertParentalAccessInput {
+  userId: string;
+  profileId: string | null | undefined;
+  video: { id: string; maturityRating: string | null };
+  /** Live elapsed seconds for the in-flight session, added to today's total. */
+  liveSessionSeconds?: number;
+  /** When provided, that session is excluded from the historic sum. */
+  liveSessionId?: string;
+}
+
+/**
+ * Throws `ParentalBlockedError` (HTTP 403) when the active profile's parental
+ * controls disallow continued playback. No-ops when no profile is selected
+ * (anonymous / parent profile).
+ */
+export async function assertParentalAccess(
+  input: AssertParentalAccessInput,
+): Promise<void> {
+  const { userId, profileId, video, liveSessionSeconds = 0, liveSessionId } = input;
+  if (!profileId) return;
+
+  const profile = await prisma.profile.findFirst({
+    where: { id: profileId, userId },
+    select: { id: true, isKidsProfile: true, parentalControls: true },
+  });
+  if (!profile) return; // ID doesn't belong to this user; let other code handle it
+
+  const controls = normalize(profile.parentalControls, profile.isKidsProfile);
+
+  if (isOutsideAllowedHours(controls.allowedHours)) {
+    throw blocked(
+      "OUTSIDE_HOURS",
+      "This profile is outside its allowed watch window.",
+      { allowedHours: controls.allowedHours ?? undefined },
+    );
+  }
+
+  const cap = maturityRank(controls.maxMaturityRating);
+  const videoRank = maturityRank((video.maturityRating as MaturityRating) ?? "NR");
+  // NR videos require an NR cap; everything else must be <= cap.
+  const exceedsCap =
+    videoRank === maturityRank("NR")
+      ? cap !== maturityRank("NR")
+      : videoRank > cap;
+  if (exceedsCap) {
+    throw blocked(
+      "MATURITY",
+      "This title exceeds the profile's maturity cap.",
+      {
+        maxMaturityRating: controls.maxMaturityRating,
+        videoMaturityRating: video.maturityRating,
+      },
+    );
+  }
+
+  const limitMinutes = controls.dailyTimeLimitMinutes;
+  if (limitMinutes !== null && limitMinutes !== undefined && limitMinutes > 0) {
+    const limitSeconds = Math.round(limitMinutes * 60);
+    const historic = await sumWatchedSecondsToday(profileId, liveSessionId);
+    const total = historic + Math.max(0, liveSessionSeconds);
+    if (total >= limitSeconds) {
+      throw blocked(
+        "TIME_LIMIT",
+        "Daily watch-time limit reached for this profile.",
+        {
+          dailyTimeLimitMinutes: limitMinutes,
+          secondsUsed: total,
+        },
+      );
+    }
+  }
+}
+
+/**
+ * Throws `ParentalBlockedError` (HTTP 403, reason "PURCHASES") when the active
+ * profile's parental controls disallow making purchases. Used to gate Stripe
+ * checkout endpoints. No-ops when no profile id is supplied (e.g. signup flow
+ * before any profile exists yet).
+ */
+export async function assertProfileCanPurchase(
+  userId: string,
+  profileId: string | null | undefined,
+): Promise<void> {
+  if (!profileId) return;
+
+  const profile = await prisma.profile.findFirst({
+    where: { id: profileId, userId },
+    select: { id: true, name: true, isKidsProfile: true, parentalControls: true },
+  });
+  if (!profile) return;
+
+  const controls = normalize(profile.parentalControls, profile.isKidsProfile);
+  if (!controls.allowPurchases) {
+    throw blocked(
+      "PURCHASES",
+      `Purchases are disabled for the ${profile.name} profile.`,
+      { profileName: profile.name },
+    );
+  }
+}

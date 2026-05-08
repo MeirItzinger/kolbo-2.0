@@ -14,6 +14,10 @@ import {
   findPrerollCreativeForVideo,
   chargeAdView,
 } from "../services/advertiser/adPlaybackService";
+import {
+  assertParentalAccess,
+  isParentalBlockedError,
+} from "../services/profile/parentalControlsService";
 
 const ACCESS_TYPE_TO_SOURCE: Record<string, AccessSourceType> = {
   FREE: "FREE",
@@ -68,6 +72,27 @@ export const getPlaybackToken = asyncHandler(
       throw ApiError.badRequest("No playable asset found");
     }
 
+    if (userId && profileId) {
+      try {
+        await assertParentalAccess({
+          userId,
+          profileId: profileId as string,
+          video: { id: video.id, maturityRating: video.maturityRating },
+        });
+      } catch (err) {
+        if (isParentalBlockedError(err)) {
+          return res.status(403).json({
+            status: "error",
+            code: err.code,
+            reason: err.reason,
+            message: err.message,
+            details: err.details,
+          });
+        }
+        throw err;
+      }
+    }
+
     const asset = video.videoAssets[0];
     let token: string | null = null;
 
@@ -115,10 +140,11 @@ const PREROLL_AD_MODES = new Set(["preroll", "preroll_midroll", "full_ads"]);
 export const getPrerollAd = asyncHandler(
   async (req: Request, res: Response) => {
     const { videoId } = req.params;
+    const { profileId } = req.query;
 
     const video = await prisma.video.findUnique({
       where: { id: videoId },
-      select: { id: true },
+      select: { id: true, maturityRating: true },
     });
     if (!video) throw ApiError.notFound("Video not found");
 
@@ -130,6 +156,27 @@ export const getPrerollAd = asyncHandler(
 
     if (!accessResult.allowed) {
       throw ApiError.forbidden(accessResult.reason);
+    }
+
+    if (userId && profileId) {
+      try {
+        await assertParentalAccess({
+          userId,
+          profileId: profileId as string,
+          video: { id: video.id, maturityRating: video.maturityRating },
+        });
+      } catch (err) {
+        if (isParentalBlockedError(err)) {
+          return res.status(403).json({
+            status: "error",
+            code: err.code,
+            reason: err.reason,
+            message: err.message,
+            details: err.details,
+          });
+        }
+        throw err;
+      }
     }
 
     if (!PREROLL_AD_MODES.has(accessResult.adMode)) {

@@ -46,36 +46,48 @@ function writeStoredId(id: string | null) {
 }
 
 export function ActiveProfileProvider({ children }: { children: ReactNode }) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const qc = useQueryClient();
   const [activeId, setActiveIdState] = useState<string | null>(() =>
     readStoredId(),
   );
 
-  const { data: profiles = [], isLoading } = useQuery<Profile[]>({
+  const {
+    data: profiles = [],
+    isLoading,
+    isFetching,
+    isFetched,
+  } = useQuery<Profile[]>({
     queryKey: PROFILES_KEY,
     queryFn: listProfiles,
     enabled: isAuthenticated,
     staleTime: 1000 * 60,
   });
 
-  // Reset on logout.
+  // Reset only on a *confirmed* logout. Without the auth-loading guard the
+  // initial render (before /api/auth/me resolves) would mis-classify the user
+  // as logged out and silently wipe the saved profile id from localStorage.
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated) {
       setActiveIdState(null);
       writeStoredId(null);
     }
-  }, [isAuthenticated]);
+  }, [authLoading, isAuthenticated]);
 
-  // If the stored profile no longer belongs to the current user, drop it.
+  // If the stored profile id genuinely no longer belongs to this user, drop
+  // it. Skip while a refetch is in flight — otherwise creating a new profile
+  // (which invalidates the list) would briefly see a stale list missing the
+  // brand-new id and incorrectly clear the just-set active profile.
   useEffect(() => {
     if (!activeId) return;
+    if (!isFetched || isFetching) return;
     if (!profiles.length) return;
     if (!profiles.some((p) => p.id === activeId)) {
       setActiveIdState(null);
       writeStoredId(null);
     }
-  }, [activeId, profiles]);
+  }, [activeId, profiles, isFetched, isFetching]);
 
   const activeProfile = useMemo<Profile | null>(() => {
     if (!activeId) return null;

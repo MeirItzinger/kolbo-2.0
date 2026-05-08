@@ -477,10 +477,26 @@ export async function createWatchSession(
   return session;
 }
 
-export async function heartbeat(sessionId: string): Promise<void> {
+export interface HeartbeatResult {
+  sessionId: string;
+  userId: string;
+  profileId: string | null;
+  videoId: string;
+  startedAt: Date;
+  playbackSeconds: number;
+}
+
+export async function heartbeat(sessionId: string): Promise<HeartbeatResult> {
   const session = await prisma.watchSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, endedAt: true },
+    select: {
+      id: true,
+      userId: true,
+      profileId: true,
+      videoId: true,
+      startedAt: true,
+      endedAt: true,
+    },
   });
 
   if (!session) {
@@ -491,10 +507,28 @@ export async function heartbeat(sessionId: string): Promise<void> {
     throw ApiError.badRequest("Session has already ended");
   }
 
+  const now = new Date();
+  const playbackSeconds = Math.max(
+    0,
+    Math.floor((now.getTime() - session.startedAt.getTime()) / 1000),
+  );
+
   await prisma.watchSession.update({
     where: { id: sessionId },
-    data: { lastHeartbeatAt: new Date() },
+    data: {
+      lastHeartbeatAt: now,
+      playbackSeconds,
+    },
   });
+
+  return {
+    sessionId: session.id,
+    userId: session.userId,
+    profileId: session.profileId,
+    videoId: session.videoId,
+    startedAt: session.startedAt,
+    playbackSeconds,
+  };
 }
 
 export async function endSession(sessionId: string): Promise<void> {

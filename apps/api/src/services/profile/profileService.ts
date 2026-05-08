@@ -1,3 +1,4 @@
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/apiError";
 
@@ -13,6 +14,37 @@ const PROFILE_SELECT = {
   createdAt: true,
   updatedAt: true,
 } as const;
+
+type PrismaTx = PrismaClient | Prisma.TransactionClient;
+
+function defaultProfileName(firstName?: string | null): string {
+  const trimmed = firstName?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : "My Profile";
+}
+
+/**
+ * Ensures the user has at least one profile. Creates a default one named after
+ * `firstName` if the user currently has zero profiles. Safe to call repeatedly.
+ * Accepts a Prisma transaction client so it can be composed inside other
+ * transactions (e.g. signup, accept-invite).
+ */
+export async function ensureDefaultProfile(
+  userId: string,
+  firstName?: string | null,
+  client: PrismaTx = prisma,
+) {
+  const count = await client.profile.count({ where: { userId } });
+  if (count > 0) return null;
+
+  return client.profile.create({
+    data: {
+      userId,
+      name: defaultProfileName(firstName),
+      isKidsProfile: false,
+    },
+    select: PROFILE_SELECT,
+  });
+}
 
 export async function listProfiles(userId: string) {
   return prisma.profile.findMany({

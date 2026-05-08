@@ -14,8 +14,14 @@ import {
 } from "lucide-react";
 import { getVideo } from "@/api/videos";
 import { listVideos } from "@/api/videos";
-import { createCheckoutRental, createCheckoutPurchase } from "@/api/stripe";
+import {
+  createCheckoutRental,
+  createCheckoutPurchase,
+  isPurchasesBlockedError,
+} from "@/api/stripe";
 import { useAuth } from "@/hooks/useAuth";
+import { useActiveProfile } from "@/hooks/useActiveProfile";
+import { PurchasesBlockedNotice } from "@/components/PurchasesBlockedNotice";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
@@ -27,7 +33,11 @@ export default function VideoPage() {
   const [searchParams] = useSearchParams();
   const bouncedFromWatch = searchParams.get("needsAccess") === "1";
   const { isAuthenticated } = useAuth();
+  const { activeProfile, parentalControls } = useActiveProfile();
+  const purchasesAllowed =
+    !isAuthenticated || parentalControls?.allowPurchases !== false;
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [blockedName, setBlockedName] = useState<string | null>(null);
 
   const videoQuery = useQuery({
     queryKey: ["video", slug],
@@ -92,15 +102,26 @@ export default function VideoPage() {
   const purchaseOption = video.purchaseOptions?.[0] ?? null;
 
   const handleRent = async (rentalOptionId: string) => {
+    if (!purchasesAllowed) {
+      setBlockedName(activeProfile?.name ?? null);
+      return;
+    }
     setCheckoutLoading(rentalOptionId);
     try {
       const { url } = await createCheckoutRental({
         rentalOptionId,
         successUrl: `${window.location.origin}/checkout/success?type=rental&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: window.location.href,
+        profileId: activeProfile?.id ?? null,
       });
       if (url) window.location.href = url;
     } catch (err: any) {
+      if (isPurchasesBlockedError(err)) {
+        setBlockedName(
+          err.response.data.details.profileName ?? activeProfile?.name ?? null,
+        );
+        return;
+      }
       alert(err?.response?.data?.message ?? "Failed to start checkout");
     } finally {
       setCheckoutLoading(null);
@@ -108,15 +129,26 @@ export default function VideoPage() {
   };
 
   const handlePurchase = async (purchaseOptionId: string) => {
+    if (!purchasesAllowed) {
+      setBlockedName(activeProfile?.name ?? null);
+      return;
+    }
     setCheckoutLoading(purchaseOptionId);
     try {
       const { url } = await createCheckoutPurchase({
         purchaseOptionId,
         successUrl: `${window.location.origin}/checkout/success?type=purchase&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: window.location.href,
+        profileId: activeProfile?.id ?? null,
       });
       if (url) window.location.href = url;
     } catch (err: any) {
+      if (isPurchasesBlockedError(err)) {
+        setBlockedName(
+          err.response.data.details.profileName ?? activeProfile?.name ?? null,
+        );
+        return;
+      }
       alert(err?.response?.data?.message ?? "Failed to start checkout");
     } finally {
       setCheckoutLoading(null);
@@ -291,6 +323,14 @@ export default function VideoPage() {
                 </div>
               )}
 
+            {(rentalOption || purchaseOption) &&
+              isAuthenticated &&
+              (!purchasesAllowed || blockedName !== null) && (
+                <PurchasesBlockedNotice
+                  profileName={blockedName ?? activeProfile?.name ?? null}
+                />
+              )}
+
             {rentalOption && (
               <div className="rounded-xl border border-surface-800 bg-surface-900 p-5">
                 <div className="flex items-center justify-between">
@@ -308,11 +348,15 @@ export default function VideoPage() {
                   <Button
                     variant="outline"
                     className="mt-3 w-full"
-                    disabled={checkoutLoading === rentalOption.id}
+                    disabled={
+                      checkoutLoading === rentalOption.id || !purchasesAllowed
+                    }
                     onClick={() => handleRent(rentalOption.id)}
                   >
                     {checkoutLoading === rentalOption.id ? (
                       <Spinner size="sm" />
+                    ) : !purchasesAllowed ? (
+                      <><Lock className="h-4 w-4" />Purchases off</>
                     ) : (
                       <><ShoppingCart className="h-4 w-4" />Rent Now</>
                     )}
@@ -342,11 +386,15 @@ export default function VideoPage() {
                 {isAuthenticated ? (
                   <Button
                     className="mt-3 w-full"
-                    disabled={checkoutLoading === purchaseOption.id}
+                    disabled={
+                      checkoutLoading === purchaseOption.id || !purchasesAllowed
+                    }
                     onClick={() => handlePurchase(purchaseOption.id)}
                   >
                     {checkoutLoading === purchaseOption.id ? (
                       <Spinner size="sm" />
+                    ) : !purchasesAllowed ? (
+                      <><Lock className="h-4 w-4" />Purchases off</>
                     ) : (
                       <><ShoppingCart className="h-4 w-4" />Buy Now</>
                     )}

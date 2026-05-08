@@ -10,10 +10,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Tv, ArrowLeft } from "lucide-react";
 import { getChannel } from "@/api/channels";
 import { useAuth } from "@/hooks/useAuth";
-import { createCheckoutSubscription } from "@/api/stripe";
+import { useActiveProfile } from "@/hooks/useActiveProfile";
+import {
+  createCheckoutSubscription,
+  isPurchasesBlockedError,
+} from "@/api/stripe";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
+import { PurchasesBlockedNotice } from "@/components/PurchasesBlockedNotice";
 import { cn, formatCurrency } from "@/lib/utils";
 import type { SubscriptionPlan, PlanPriceVariant, AdTier } from "@/types";
 
@@ -25,6 +30,7 @@ export default function PricingPage() {
   const [searchParams] = useSearchParams();
   const presetVariantId = searchParams.get("variant");
   const { isAuthenticated } = useAuth();
+  const { activeProfile, parentalControls } = useActiveProfile();
   const navigate = useNavigate();
   const location = useLocation();
   const [interval, setInterval] = useState<Interval>("MONTHLY");
@@ -32,6 +38,10 @@ export default function PricingPage() {
   const [adTier, setAdTier] = useState<AdTier>("WITHOUT_ADS");
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const [presetApplied, setPresetApplied] = useState(false);
+  const [purchaseBlock, setPurchaseBlock] = useState<string | null>(null);
+
+  const purchasesAllowed =
+    !isAuthenticated || parentalControls?.allowPurchases !== false;
 
   async function handleSubscribe(_plan: SubscriptionPlan, variant: PlanPriceVariant) {
     if (!isAuthenticated) {
@@ -42,15 +52,26 @@ export default function PricingPage() {
       });
       return;
     }
+    if (!purchasesAllowed) {
+      setPurchaseBlock(activeProfile?.name ?? null);
+      return;
+    }
     try {
       setCheckingOut(variant.id);
       const result = await createCheckoutSubscription({
         variantId: variant.id,
         successUrl: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`,
         cancelUrl: window.location.href,
+        profileId: activeProfile?.id ?? null,
       });
       window.location.href = result.url;
     } catch (e) {
+      if (isPurchasesBlockedError(e)) {
+        setPurchaseBlock(
+          e.response.data.details.profileName ?? activeProfile?.name ?? null,
+        );
+        return;
+      }
       console.error(e);
     } finally {
       setCheckingOut(null);
@@ -168,6 +189,18 @@ export default function PricingPage() {
           <p className="mt-2 text-surface-400">{channel.description}</p>
         )}
       </div>
+
+      {!purchasesAllowed && (
+        <div className="mb-8 mx-auto max-w-2xl">
+          <PurchasesBlockedNotice profileName={activeProfile?.name ?? null} />
+        </div>
+      )}
+
+      {purchaseBlock !== null && purchasesAllowed && (
+        <div className="mb-8 mx-auto max-w-2xl">
+          <PurchasesBlockedNotice profileName={purchaseBlock} />
+        </div>
+      )}
 
       {/* Controls */}
       <div className="mb-8 flex flex-wrap items-center justify-center gap-4">
@@ -309,14 +342,25 @@ export default function PricingPage() {
                 <Button
                   className="mt-6 w-full"
                   variant={isPopular ? "default" : "outline"}
-                  disabled={price == null || checkingOut === variant?.id}
+                  disabled={
+                    price == null ||
+                    checkingOut === variant?.id ||
+                    !purchasesAllowed
+                  }
                   onClick={() => variant && handleSubscribe(plan, variant)}
+                  title={
+                    !purchasesAllowed
+                      ? `Purchases are off for ${activeProfile?.name ?? "this profile"}`
+                      : undefined
+                  }
                 >
                   {checkingOut === variant?.id
                     ? "Redirecting…"
-                    : isAuthenticated
-                    ? "Subscribe"
-                    : "Sign in to Subscribe"}
+                    : !isAuthenticated
+                    ? "Sign in to Subscribe"
+                    : !purchasesAllowed
+                    ? "Purchases off"
+                    : "Subscribe"}
                 </Button>
               </div>
             );
